@@ -219,6 +219,22 @@ const joinGameTransaction = db.transaction((userId, gameId, entryFee, seatOrder)
   return true;
 });
 
+// Remove player from waiting room (refund entry fee)
+const removePlayerFromGame = db.prepare(`
+  DELETE FROM game_players WHERE game_id = @game_id AND user_id = @user_id
+`);
+
+const subtractPot = db.prepare(`
+  UPDATE games SET pot = pot - ? WHERE id = ?
+`);
+
+const leaveGameTransaction = db.transaction((userId, gameId, entryFee) => {
+  removePlayerFromGame.run({ game_id: gameId, user_id: userId });
+  subtractPot.run(entryFee, gameId);
+  addBalance.run(entryFee, userId); // full refund
+  return true;
+});
+
 const finalizeGameTransaction = db.transaction((gameId, winnerId, prize, houseFee) => {
   updateGameWinner.run({ game_id: gameId, winner_user_id: winnerId });
   setPlayerWinner.run({ game_id: gameId, user_id: winnerId });
@@ -257,5 +273,6 @@ module.exports = {
   recordTurn,
   getGameTurns,
   joinGameTransaction,
+  leaveGameTransaction,
   finalizeGameTransaction,
 };

@@ -4,15 +4,9 @@ import Dice from '../components/Dice';
 import { haptic, hapticNotification } from '../utils/telegram';
 
 export default function GameScreen({
-  game,
-  players,
-  activePlayers,
-  currentPlayer,
-  myUserId,
-  lastRoll,
-  onRoll,
-  rolling,
-  rollError,
+  game, players, activePlayers, currentPlayer, myUserId,
+  lastRoll, onRoll, rolling, rollError,
+  turnSecondsLeft, disconnectedPlayer,
 }) {
   const [showEliminated, setShowEliminated] = useState(null);
 
@@ -20,33 +14,25 @@ export default function GameScreen({
   const myPlayerData = players?.find(p => p.user_id === myUserId);
   const isEliminated = myPlayerData?.status === 'eliminated';
 
+  const turnTimerDanger = turnSecondsLeft <= 3;
+  const turnTimerWarning = turnSecondsLeft <= 5;
+
   useEffect(() => {
     if (lastRoll?.isEliminated) {
       setShowEliminated(lastRoll.firstName);
       hapticNotification('error');
-      setTimeout(() => setShowEliminated(null), 2500);
+      const t = setTimeout(() => setShowEliminated(null), 2500);
+      return () => clearTimeout(t);
     } else if (lastRoll?.diceResult) {
       haptic(isMyTurn ? 'heavy' : 'light');
     }
   }, [lastRoll]);
 
-  const sortedActive = [...(activePlayers || [])];
-  const sortedAll = [...(players || [])];
-
   return (
-    <div className="screen" style={{
-      padding: '16px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '14px',
-    }}>
+    <div className="screen" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingTop: '4px',
-      }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
         <div>
           <div style={{ fontSize: '13px', color: 'var(--text3)' }}>חדר #{game?.room_code}</div>
           <div style={{ fontWeight: 700, fontSize: '17px' }}>🎲 משחק פעיל</div>
@@ -54,9 +40,7 @@ export default function GameScreen({
         <div style={{
           background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(251,191,36,0.08))',
           border: '1px solid rgba(245,158,11,0.3)',
-          borderRadius: 'var(--radius)',
-          padding: '8px 14px',
-          textAlign: 'center',
+          borderRadius: 'var(--radius)', padding: '8px 14px', textAlign: 'center',
         }}>
           <div style={{ fontSize: '11px', color: 'var(--gold)', marginBottom: '2px' }}>קופה</div>
           <div className="font-display" style={{ fontSize: '18px', color: 'var(--gold2)', fontWeight: 700 }}>
@@ -65,14 +49,32 @@ export default function GameScreen({
         </div>
       </div>
 
-      {/* Eliminated banner */}
+      {/* Disconnected player banner — FIX #6 */}
+      {disconnectedPlayer && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.1)',
+          border: '1px solid rgba(245, 158, 11, 0.4)',
+          borderRadius: 'var(--radius)', padding: '12px 16px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          animation: 'fadeIn 0.3s ease',
+        }}>
+          <span style={{ color: 'var(--gold2)', fontSize: '14px' }}>
+            ⚠️ {disconnectedPlayer.firstName} התנתק
+          </span>
+          <span style={{
+            fontFamily: 'Orbitron, sans-serif', fontSize: '18px', fontWeight: 700,
+            color: disconnectedPlayer.secondsLeft <= 3 ? 'var(--danger2)' : 'var(--gold2)',
+          }}>
+            {disconnectedPlayer.secondsLeft}s
+          </span>
+        </div>
+      )}
+
+      {/* Eliminated banner — FIX #3: shown for 2.5s */}
       {showEliminated && (
         <div style={{
-          background: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid rgba(239, 68, 68, 0.4)',
-          borderRadius: 'var(--radius)',
-          padding: '12px',
-          textAlign: 'center',
+          background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)',
+          borderRadius: 'var(--radius)', padding: '12px', textAlign: 'center',
           animation: 'pop 0.3s ease forwards',
         }}>
           <span style={{ color: 'var(--danger2)', fontWeight: 700 }}>
@@ -81,122 +83,123 @@ export default function GameScreen({
         </div>
       )}
 
-      {/* Current turn indicator */}
+      {/* Current turn + turn timer — FIX #2 */}
       <div style={{
         background: isMyTurn
           ? 'linear-gradient(135deg, rgba(124,58,237,0.2), rgba(168,85,247,0.1))'
           : 'var(--surface)',
         border: `2px solid ${isMyTurn ? 'var(--accent)' : 'var(--border)'}`,
         borderRadius: 'var(--radius)',
-        padding: '16px',
-        textAlign: 'center',
+        padding: '14px 16px',
         animation: isMyTurn ? 'glow 2s ease-in-out infinite' : 'none',
       }}>
-        {isMyTurn ? (
-          <>
-            <div style={{ fontSize: '14px', color: 'var(--accent2)', fontWeight: 600 }}>
-              🎯 התור שלך!
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            {isMyTurn ? (
+              <>
+                <div style={{ fontSize: '14px', color: 'var(--accent2)', fontWeight: 700 }}>🎯 התור שלך!</div>
+                <div style={{ fontSize: '12px', color: 'var(--text2)', marginTop: '2px' }}>לחץ על הכפתור לזרוק</div>
+              </>
+            ) : currentPlayer ? (
+              <>
+                <div style={{ fontSize: '12px', color: 'var(--text3)' }}>תור</div>
+                <div style={{ fontWeight: 700, fontSize: '16px' }}>{currentPlayer.first_name}</div>
+              </>
+            ) : null}
+          </div>
+
+          {/* Turn countdown ring */}
+          {!isEliminated && currentPlayer && (
+            <div style={{ position: 'relative', width: '52px', height: '52px' }}>
+              <svg width="52" height="52" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="26" cy="26" r="22" fill="none" stroke="var(--border)" strokeWidth="4" />
+                <circle
+                  cx="26" cy="26" r="22" fill="none"
+                  stroke={turnTimerDanger ? 'var(--danger2)' : turnTimerWarning ? 'var(--gold2)' : 'var(--accent2)'}
+                  strokeWidth="4"
+                  strokeDasharray={`${2 * Math.PI * 22}`}
+                  strokeDashoffset={`${2 * Math.PI * 22 * (1 - turnSecondsLeft / 10)}`}
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
+                />
+              </svg>
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'Orbitron, sans-serif', fontSize: '14px', fontWeight: 700,
+                color: turnTimerDanger ? 'var(--danger2)' : turnTimerWarning ? 'var(--gold2)' : 'var(--text)',
+              }}>
+                {turnSecondsLeft}
+              </div>
             </div>
-            <div style={{ fontSize: '13px', color: 'var(--text2)', marginTop: '2px' }}>
-              לחץ על הקובייה לזרוק
-            </div>
-          </>
-        ) : currentPlayer ? (
-          <>
-            <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '2px' }}>תור</div>
-            <div style={{ fontWeight: 700, fontSize: '17px' }}>
-              {currentPlayer.first_name}
-            </div>
-          </>
-        ) : null}
+          )}
+        </div>
       </div>
 
       {/* Dice area */}
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '16px',
-        padding: '20px 0',
-      }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', padding: '12px 0' }}>
         <div
-          style={{
-            cursor: isMyTurn && !rolling && !isEliminated ? 'pointer' : 'default',
-            transform: isMyTurn && !rolling ? 'scale(1)' : 'scale(0.95)',
-            transition: 'transform 0.2s',
-          }}
-          onClick={() => {
-            if (isMyTurn && !rolling && !isEliminated) onRoll();
-          }}
+          style={{ cursor: isMyTurn && !rolling && !isEliminated ? 'pointer' : 'default' }}
+          onClick={() => { if (isMyTurn && !rolling && !isEliminated) onRoll(); }}
         >
-          <Dice
-            value={lastRoll?.diceResult}
-            rolling={rolling}
-          />
+          <Dice value={lastRoll?.diceResult} rolling={rolling} />
         </div>
 
         {lastRoll && !rolling && (
-          <div style={{
-            textAlign: 'center',
-            animation: 'fadeIn 0.3s ease forwards',
-          }}>
-            <div style={{ fontSize: '15px', color: 'var(--text2)' }}>
+          <div style={{ textAlign: 'center', animation: 'fadeIn 0.3s ease forwards' }}>
+            <span style={{ fontSize: '15px', color: 'var(--text2)' }}>
               {lastRoll.firstName} זרק{' '}
               <strong style={{ color: lastRoll.diceResult === 1 ? 'var(--danger2)' : 'var(--gold2)' }}>
                 {lastRoll.diceResult}
               </strong>
-              {lastRoll.isEliminated && (
-                <span style={{ color: 'var(--danger2)' }}> — הודח! 💀</span>
-              )}
-            </div>
+              {lastRoll.isEliminated && <span style={{ color: 'var(--danger2)' }}> — הודח! 💀</span>}
+            </span>
           </div>
         )}
 
         {rollError && (
-          <div style={{ color: 'var(--danger2)', fontSize: '14px', textAlign: 'center' }}>
-            ❌ {rollError}
-          </div>
+          <div style={{ color: 'var(--danger2)', fontSize: '14px', textAlign: 'center' }}>❌ {rollError}</div>
         )}
 
         {isMyTurn && !rolling && !isEliminated && (
           <button
             className="btn btn-primary"
-            style={{ minWidth: '180px', fontSize: '17px' }}
-            onClick={() => onRoll()}
+            style={{
+              minWidth: '180px', fontSize: '17px',
+              boxShadow: turnTimerDanger ? '0 0 20px rgba(239,68,68,0.5)' : undefined,
+              border: turnTimerDanger ? '2px solid var(--danger2)' : undefined,
+            }}
+            onClick={onRoll}
           >
             🎲 זרוק קובייה!
+            {turnTimerDanger && <span style={{ marginRight: '8px', color: 'var(--danger2)', fontSize: '14px' }}>({turnSecondsLeft})</span>}
           </button>
         )}
 
         {isEliminated && (
           <div style={{
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: 'var(--radius)',
-            padding: '16px 24px',
-            textAlign: 'center',
+            background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: 'var(--radius)', padding: '16px 24px', textAlign: 'center',
           }}>
             <div style={{ fontSize: '32px', marginBottom: '6px' }}>💀</div>
             <div style={{ color: 'var(--danger2)', fontWeight: 700 }}>הודחת מהמשחק</div>
-            <div style={{ color: 'var(--text2)', fontSize: '13px', marginTop: '4px' }}>
-              המתן לסוף המשחק...
-            </div>
+            <div style={{ color: 'var(--text2)', fontSize: '13px', marginTop: '4px' }}>המתן לסוף המשחק...</div>
           </div>
         )}
       </div>
 
       {/* Players list */}
-      <div className="card" style={{ padding: '16px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px', color: 'var(--text2)' }}>
-          שחקנים ({sortedActive.length} נשארו)
+      <div className="card" style={{ padding: '14px' }}>
+        <h3 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '10px', color: 'var(--text2)' }}>
+          שחקנים ({activePlayers?.length ?? 0} נשארו)
         </h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {sortedAll.map(player => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+          {players?.map(player => (
             <PlayerRow
               key={player.user_id}
               player={player}
               isMe={player.user_id === myUserId}
               isCurrent={currentPlayer?.user_id === player.user_id}
+              isDisconnected={disconnectedPlayer?.userId === player.user_id}
             />
           ))}
         </div>
@@ -205,77 +208,46 @@ export default function GameScreen({
   );
 }
 
-function PlayerRow({ player, isMe, isCurrent }) {
+function PlayerRow({ player, isMe, isCurrent, isDisconnected }) {
   const isActive = player.status === 'active';
-  const isEliminated = player.status === 'eliminated';
+  const isElim = player.status === 'eliminated';
 
   return (
     <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '10px',
-      padding: '10px 12px',
-      background: isCurrent ? 'rgba(124,58,237,0.15)' : isEliminated ? 'rgba(239,68,68,0.05)' : 'var(--bg3)',
-      border: `1px solid ${isCurrent ? 'var(--accent)' : isEliminated ? 'rgba(239,68,68,0.2)' : 'transparent'}`,
+      display: 'flex', alignItems: 'center', gap: '10px',
+      padding: '9px 12px',
+      background: isCurrent ? 'rgba(124,58,237,0.15)' : isElim ? 'rgba(239,68,68,0.05)' : 'var(--bg3)',
+      border: `1px solid ${isCurrent ? 'var(--accent)' : isDisconnected ? 'rgba(245,158,11,0.4)' : isElim ? 'rgba(239,68,68,0.2)' : 'transparent'}`,
       borderRadius: 'var(--radius-sm)',
-      opacity: isEliminated ? 0.5 : 1,
+      opacity: isElim ? 0.5 : 1,
       transition: 'all 0.3s',
     }}>
-      {/* Avatar */}
       <div style={{
-        width: '32px',
-        height: '32px',
-        borderRadius: '50%',
+        width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
         background: isMe
           ? 'linear-gradient(135deg, var(--accent), var(--accent2))'
-          : isEliminated
-            ? 'var(--bg2)'
-            : 'var(--surface2)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '12px',
-        fontWeight: 700,
-        color: 'white',
-        flexShrink: 0,
+          : isElim ? 'var(--bg2)' : 'var(--surface2)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '12px', fontWeight: 700, color: 'white',
       }}>
-        {isEliminated ? '💀' : (player.first_name || 'P').slice(0, 1).toUpperCase()}
+        {isElim ? '💀' : (player.first_name || 'P').slice(0, 1).toUpperCase()}
       </div>
 
-      {/* Name */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontWeight: 600,
-          fontSize: '14px',
-          color: isEliminated ? 'var(--text3)' : 'var(--text)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          fontWeight: 600, fontSize: '13px',
+          color: isElim ? 'var(--text3)' : 'var(--text)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {isMe ? `${player.first_name} (אתה)` : player.first_name}
         </div>
       </div>
 
-      {/* Status */}
-      <div style={{ flexShrink: 0 }}>
-        {isCurrent && (
-          <span style={{
-            background: 'var(--accent)',
-            color: 'white',
-            fontSize: '11px',
-            fontWeight: 600,
-            padding: '3px 8px',
-            borderRadius: '10px',
-          }}>
-            משחק
-          </span>
-        )}
-        {isEliminated && (
-          <span style={{ color: 'var(--danger2)', fontSize: '13px' }}>הודח</span>
-        )}
-        {isActive && !isCurrent && (
-          <span style={{ color: 'var(--success2)', fontSize: '13px' }}>•</span>
-        )}
+      <div style={{ flexShrink: 0, fontSize: '12px' }}>
+        {isCurrent && <span style={{ background: 'var(--accent)', color: 'white', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>משחק</span>}
+        {isDisconnected && <span style={{ color: 'var(--gold2)' }}>⚠️ מתנתק</span>}
+        {isElim && <span style={{ color: 'var(--danger2)' }}>הודח</span>}
+        {isActive && !isCurrent && !isDisconnected && <span style={{ color: 'var(--success2)' }}>●</span>}
       </div>
     </div>
   );
