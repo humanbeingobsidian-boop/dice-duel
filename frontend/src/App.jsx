@@ -191,6 +191,8 @@ export default function App() {
   const handleLeaveGame = useCallback(() => {
     emit('leave_game');
   }, [emit]);
+
+  const handlePlayAgain = useCallback(() => {
     setGame(null);
     setPlayers([]);
     setActivePlayers([]);
@@ -199,6 +201,8 @@ export default function App() {
     setGameResult(null);
     setCountdown(null);
     setCountdownActive(false);
+    setDisconnectedPlayer(null);
+    setTurnSecondsLeft(10);
     setScreen(SCREEN.LOBBY);
   }, []);
 
