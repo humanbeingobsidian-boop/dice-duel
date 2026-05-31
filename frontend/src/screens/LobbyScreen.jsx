@@ -1,8 +1,8 @@
 // frontend/src/screens/LobbyScreen.jsx
-import React, { useState } from 'react';
+import React from 'react';
 import { haptic } from '../utils/telegram';
 
-export default function LobbyScreen({ user, onJoin, onLeaderboard, loading, error }) {
+export default function LobbyScreen({ user, onJoin, onLeaderboard, onBack, loading, error }) {
   return (
     <div className="screen" style={{
       background: 'radial-gradient(ellipse at 50% 20%, #1a0a3a 0%, var(--bg) 60%)',
@@ -13,6 +13,17 @@ export default function LobbyScreen({ user, onJoin, onLeaderboard, loading, erro
       alignItems: 'center',
       justifyContent: 'center',
     }}>
+      {/* Back button */}
+      <div style={{ width: '100%', maxWidth: '360px' }}>
+        <button
+          className="btn btn-ghost"
+          style={{ padding: '8px 16px', fontSize: '14px' }}
+          onClick={() => { haptic('light'); onBack(); }}
+        >
+          ← חזור
+        </button>
+      </div>
+
       {/* User card */}
       <div style={{
         width: '100%',
@@ -39,7 +50,16 @@ export default function LobbyScreen({ user, onJoin, onLeaderboard, loading, erro
             color: 'var(--gold2)',
             fontFamily: 'Orbitron, sans-serif',
           }}>
-            {user?.balance ?? '—'} <span style={{ fontSize: '13px', color: 'var(--text3)', fontFamily: 'Space Grotesk' }}>קרדיטים</span>
+            {user?.balance ?? (
+              <span style={{ fontSize: '14px', color: 'var(--text3)', animation: 'pulse 1s infinite' }}>
+                טוען...
+              </span>
+            )}
+            {user?.balance !== undefined && (
+              <span style={{ fontSize: '13px', color: 'var(--text3)', fontFamily: 'Space Grotesk', marginRight: '4px' }}>
+                {' '}קרדיטים
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -91,32 +111,51 @@ export default function LobbyScreen({ user, onJoin, onLeaderboard, loading, erro
           </div>
         )}
 
-        <button
-          className="btn btn-primary btn-full"
-          onClick={() => {
-            haptic('medium');
-            onJoin();
-          }}
-          disabled={loading || (user?.balance ?? 0) < 100}
-          style={{ fontSize: '17px', padding: '16px' }}
-        >
-          {loading ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                width: '18px',
-                height: '18px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                borderTopColor: 'white',
-                borderRadius: '50%',
-                display: 'inline-block',
-                animation: 'spin 0.8s linear infinite',
-              }} />
-              מצטרף...
-            </span>
-          ) : '🚀 הצטרף למשחק'}
-        </button>
+        {/* Loading state — user not yet fetched */}
+        {!user ? (
+          <div style={{
+            padding: '14px',
+            color: 'var(--text3)',
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+          }}>
+            <span style={{
+              width: '16px', height: '16px',
+              border: '2px solid var(--border)',
+              borderTopColor: 'var(--accent2)',
+              borderRadius: '50%',
+              display: 'inline-block',
+              animation: 'spin 0.8s linear infinite',
+            }} />
+            מתחבר לשרת...
+          </div>
+        ) : (
+          <button
+            className="btn btn-primary btn-full"
+            onClick={() => { haptic('medium'); onJoin(); }}
+            disabled={loading || user.balance < 100}
+            style={{ fontSize: '17px', padding: '16px' }}
+          >
+            {loading ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  width: '18px', height: '18px',
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  borderTopColor: 'white',
+                  borderRadius: '50%',
+                  display: 'inline-block',
+                  animation: 'spin 0.8s linear infinite',
+                }} />
+                מצטרף...
+              </span>
+            ) : '🚀 הצטרף למשחק'}
+          </button>
+        )}
 
-        {(user?.balance ?? 0) < 100 && (
+        {user && user.balance < 100 && (
           <p style={{ color: 'var(--danger2)', fontSize: '13px', marginTop: '10px' }}>
             אין מספיק קרדיטים. צריך לפחות 100.
           </p>

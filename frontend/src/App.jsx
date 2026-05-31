@@ -1,5 +1,5 @@
 // frontend/src/App.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './hooks/useSocket';
 import { getInitData, expandApp } from './utils/telegram';
 
@@ -39,18 +39,14 @@ export default function App() {
   const [joining, setJoining] = useState(false);
   const [gameResult, setGameResult] = useState(null);
 
-  const authenticatedRef = useRef(false);
-
   // ─── Initial setup ──────────────────────────────────────────────────────────
   useEffect(() => {
     expandApp();
   }, []);
 
-  // ─── Authenticate when connected ────────────────────────────────────────────
+  // ─── Authenticate whenever we connect (or reconnect) ───────────────────────
   useEffect(() => {
     if (!connected) return;
-    if (authenticatedRef.current) return;
-
     const initData = getInitData();
     emit('authenticate', { initData });
   }, [connected, emit]);
@@ -217,6 +213,7 @@ export default function App() {
         user={user}
         onJoin={handleJoinGame}
         onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
+        onBack={() => setScreen(SCREEN.SPLASH)}
         loading={joining}
         error={joinError}
       />
