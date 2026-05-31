@@ -38,6 +38,8 @@ export default function App() {
   const [joinError, setJoinError] = useState(null);
   const [joining, setJoining] = useState(false);
   const [gameResult, setGameResult] = useState(null);
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState(10);
+  const [disconnectedPlayer, setDisconnectedPlayer] = useState(null); // { userId, firstName, secondsLeft }
 
   // ─── Initial setup ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -53,17 +55,11 @@ export default function App() {
 
   // ─── Socket event listeners ─────────────────────────────────────────────────
   useEffect(() => {
-    // Auth success
-    const offAuth = on('authenticated', ({ user }) => {
-      setUser(user);
-    });
+    const offAuth = on('authenticated', ({ user }) => setUser(user));
+    const offAuthErr = on('auth_error', ({ error }) => console.error('Auth error:', error));
 
-    const offAuthErr = on('auth_error', ({ error }) => {
-      console.error('Auth error:', error);
-    });
-
-    // Joined game
-    const offJoined = on('joined_game', ({ game, players, user: updatedUser, roomCode }) => {
+    // Joined waiting room
+    const offJoined = on('joined_game', ({ game, players, user: updatedUser }) => {
       setGame(game);
       setPlayers(players);
       setActivePlayers(players.filter(p => p.status === 'active'));
@@ -72,50 +68,32 @@ export default function App() {
       setJoinError(null);
       setScreen(SCREEN.WAITING);
     });
+    const offJoinErr = on('join_error', ({ error }) => { setJoining(false); setJoinError(error); });
 
-    const offJoinErr = on('join_error', ({ error }) => {
-      setJoining(false);
-      setJoinError(error);
-    });
-
-    // Player joined the room
+    // Waiting room — players joining/leaving
     const offPlayerJoined = on('player_joined', ({ players, pot }) => {
       setPlayers(players);
       setActivePlayers(players.filter(p => p.status === 'active'));
       setGame(g => g ? { ...g, pot } : g);
     });
-
-    // Player left the waiting room
     const offPlayerLeft = on('player_left', ({ players, pot }) => {
       setPlayers(players);
       setActivePlayers(players.filter(p => p.status === 'active'));
       setGame(g => g ? { ...g, pot } : g);
     });
-
-    // I left the waiting room — go back to lobby with refund
     const offLeftGame = on('left_game', ({ refunded }) => {
-      setGame(null);
-      setPlayers([]);
-      setActivePlayers([]);
-      setCountdown(null);
-      setCountdownActive(false);
+      setGame(null); setPlayers([]); setActivePlayers([]);
+      setCountdown(null); setCountdownActive(false);
       setUser(u => u ? { ...u, balance: (u.balance ?? 0) + refunded } : u);
       setScreen(SCREEN.LOBBY);
     });
 
-    // Countdown
+    // Lobby countdown — FIX #1: all players see same timer
     const offCountdownStart = on('countdown_started', ({ secondsLeft }) => {
-      setCountdown(secondsLeft);
-      setCountdownActive(true);
+      setCountdown(secondsLeft); setCountdownActive(true);
     });
-    const offCountdownTick = on('countdown_tick', ({ secondsLeft }) => {
-      setCountdown(secondsLeft);
-    });
-    // Countdown stopped — not enough players anymore
-    const offCountdownStopped = on('countdown_stopped', () => {
-      setCountdown(null);
-      setCountdownActive(false);
-    });
+    const offCountdownTick = on('countdown_tick', ({ secondsLeft }) => setCountdown(secondsLeft));
+    const offCountdownStopped = on('countdown_stopped', () => { setCountdown(null); setCountdownActive(false); });
 
     // Game started
     const offGameStarted = on('game_started', ({ players, currentPlayer, pot }) => {
@@ -124,24 +102,25 @@ export default function App() {
       setCurrentPlayer(currentPlayer);
       setGame(g => g ? { ...g, pot } : g);
       setCountdownActive(false);
+      setTurnSecondsLeft(10);
       setScreen(SCREEN.GAME);
     });
 
+    // FIX #2: turn timer from server
+    const offTurnTick = on('turn_timer_tick', ({ secondsLeft }) => setTurnSecondsLeft(secondsLeft));
+
     // Dice rolled
-    const offDiceRolled = on('dice_rolled', ({ userId, telegramId, firstName, diceResult, isEliminated, remainingPlayers }) => {
+    const offDiceRolled = on('dice_rolled', ({ userId, firstName, diceResult, isEliminated, remainingPlayers }) => {
       setRolling(false);
       setLastRoll({ userId, firstName, diceResult, isEliminated });
       setActivePlayers(remainingPlayers);
       setPlayers(prev => prev.map(p =>
-        p.user_id === userId && isEliminated
-          ? { ...p, status: 'eliminated' }
-          : p
+        p.user_id === userId && isEliminated ? { ...p, status: 'eliminated' } : p
       ));
+      // FIX #3: don't clear lastRoll immediately — let it show for 2.5s
     });
-
     const offRollErr = on('roll_error', ({ error }) => {
-      setRolling(false);
-      setRollError(error);
+      setRolling(false); setRollError(error);
       setTimeout(() => setRollError(null), 3000);
     });
 
@@ -151,42 +130,47 @@ export default function App() {
       setActivePlayers(remainingPlayers);
     });
 
+    // FIX #6: player disconnected during active game
+    const offPlayerDisconnected = on('player_disconnected', ({ userId, firstName, secondsLeft }) => {
+      setDisconnectedPlayer({ userId, firstName, secondsLeft });
+    });
+    const offReconnectTick = on('reconnect_tick', ({ userId, secondsLeft }) => {
+      setDisconnectedPlayer(d => d?.userId === userId ? { ...d, secondsLeft } : d);
+    });
+    const offPlayerAbandoned = on('player_abandoned', ({ userId, firstName, remainingPlayers }) => {
+      setDisconnectedPlayer(null);
+      setActivePlayers(remainingPlayers);
+      setPlayers(prev => prev.map(p => p.user_id === userId ? { ...p, status: 'eliminated' } : p));
+    });
+    const offPlayerReconnected = on('player_reconnected', ({ userId }) => {
+      setDisconnectedPlayer(d => d?.userId === userId ? null : d);
+    });
+
     // Game over
     const offGameOver = on('game_over', ({ winner, pot, prize, houseCut }) => {
       setGameResult({ winner, pot, prize, houseCut });
-      setScreen(SCREEN.RESULT);
+      setTimeout(() => setScreen(SCREEN.RESULT), 300);
+    });
+    const offGameCancelled = on('game_cancelled', ({ reason }) => { setScreen(SCREEN.LOBBY); setJoinError(reason); });
+
+    // Snapshot on reconnect
+    const offSnapshot = on('game_snapshot', ({ game, players, activePlayers, currentPlayer, started, turnSecondsLeft }) => {
+      setGame(game); setPlayers(players); setActivePlayers(activePlayers); setCurrentPlayer(currentPlayer);
+      if (turnSecondsLeft !== undefined) setTurnSecondsLeft(turnSecondsLeft);
+      if (started && game.status === 'active') setScreen(SCREEN.GAME);
+      else if (game.status === 'waiting') setScreen(SCREEN.WAITING);
     });
 
-    const offGameCancelled = on('game_cancelled', ({ reason }) => {
-      setScreen(SCREEN.LOBBY);
-      setJoinError(reason);
-    });
-
-    // Snapshot (reconnect)
-    const offSnapshot = on('game_snapshot', ({ game, players, activePlayers, currentPlayer, started }) => {
-      setGame(game);
-      setPlayers(players);
-      setActivePlayers(activePlayers);
-      setCurrentPlayer(currentPlayer);
-      if (started && game.status === 'active') {
-        setScreen(SCREEN.GAME);
-      } else if (game.status === 'waiting') {
-        setScreen(SCREEN.WAITING);
-      }
-    });
-
-    // Balance updated
-    const offBalance = on('balance_updated', ({ balance }) => {
-      setUser(u => u ? { ...u, balance } : u);
-    });
+    const offBalance = on('balance_updated', ({ balance }) => setUser(u => u ? { ...u, balance } : u));
 
     return () => {
       offAuth(); offAuthErr(); offJoined(); offJoinErr();
       offPlayerJoined(); offPlayerLeft(); offLeftGame();
       offCountdownStart(); offCountdownTick(); offCountdownStopped();
-      offGameStarted(); offDiceRolled(); offRollErr();
-      offNextTurn(); offGameOver(); offGameCancelled();
-      offSnapshot(); offBalance();
+      offGameStarted(); offTurnTick(); offDiceRolled(); offRollErr();
+      offNextTurn(); offPlayerDisconnected(); offReconnectTick();
+      offPlayerAbandoned(); offPlayerReconnected();
+      offGameOver(); offGameCancelled(); offSnapshot(); offBalance();
     };
   }, [on]);
 
@@ -270,6 +254,8 @@ export default function App() {
         onRoll={handleRoll}
         rolling={rolling}
         rollError={rollError}
+        turnSecondsLeft={turnSecondsLeft}
+        disconnectedPlayer={disconnectedPlayer}
       />
     );
   }
