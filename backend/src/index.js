@@ -7,6 +7,7 @@ const cors = require('cors');
 
 const apiRoutes = require('./routes/api');
 const setupSocket = require('./socket/socketHandler');
+const { startBot } = require('./bot');
 
 const app = express();
 const server = http.createServer(app);
@@ -48,4 +49,7 @@ server.listen(PORT, () => {
   console.log(`🚀 Dice Duel backend running on port ${PORT}`);
   console.log(`   Dev mode: ${process.env.DEV_MODE === 'true' ? '✅ ON' : '❌ OFF'}`);
   console.log(`   Frontend: ${FRONTEND_URL}`);
+
+  // הבוט רץ באותו process — לא צריך שירות נפרד
+  startBot();
 });
