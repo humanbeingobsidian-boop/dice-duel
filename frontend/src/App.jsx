@@ -53,12 +53,33 @@ export default function App() {
     if (!connected) return;
     const initData = getInitData();
     emit('authenticate', { initData });
+    // FIX #1: after auth, check if we have an active game to return to
+    setTimeout(() => emit('find_active_game'), 300);
   }, [connected, emit]);
 
   // ─── Socket event listeners ─────────────────────────────────────────────────
   useEffect(() => {
     const offAuth = on('authenticated', ({ user }) => setUser(user));
     const offAuthErr = on('auth_error', ({ error }) => console.error('Auth error:', error));
+
+    // FIX #1: auto-rejoin active game after reconnect
+    const offActiveGame = on('active_game_found', ({ roomCode, snapshot }) => {
+      if (!snapshot) return;
+      setGame(snapshot.game); setPlayers(snapshot.players);
+      setActivePlayers(snapshot.activePlayers); setCurrentPlayer(snapshot.currentPlayer);
+      if (snapshot.turnSecondsLeft !== undefined) setTurnSecondsLeft(snapshot.turnSecondsLeft);
+      if (snapshot.reconnectSecondsLeft > 0) setMyReconnectSeconds(snapshot.reconnectSecondsLeft);
+      setScreen(SCREEN.GAME);
+    });
+    const offNoActiveGame = on('no_active_game', () => { /* stay on current screen */ });
+
+    // Turn timer paused/resumed (while player is disconnected)
+    const offTimerPaused = on('turn_timer_paused', () => {
+      // Freeze display — don't clear, just stop ticking (server stopped sending ticks)
+    });
+    const offTimerResumed = on('turn_timer_resumed', () => {
+      // Server will start sending turn_timer_tick again
+    });
 
     // Joined waiting room
     const offJoined = on('joined_game', ({ game, players, user: updatedUser, countdownActive: ca, countdownSecondsLeft: cs }) => {
@@ -185,7 +206,9 @@ export default function App() {
     const offBalance = on('balance_updated', ({ balance }) => setUser(u => u ? { ...u, balance } : u));
 
     return () => {
-      offAuth(); offAuthErr(); offJoined(); offJoinErr();
+      offAuth(); offAuthErr(); offActiveGame(); offNoActiveGame();
+      offTimerPaused(); offTimerResumed();
+      offJoined(); offJoinErr();
       offPlayerJoined(); offPlayerLeft(); offLeftGame();
       offCountdownStart(); offCountdownTick(); offCountdownStopped();
       offGameStarted(); offTurnTick(); offDiceRolled(); offRollErr();

@@ -23,7 +23,7 @@ module.exports = function setupSocket(io) {
           if (!telegramUser) return socket.emit('auth_error', { error: 'Invalid Telegram data' });
         }
 
-        const dbUser = upsertUser.get({
+        const dbUser = upsertUser({
           telegram_id: String(telegramUser.id),
           username: telegramUser.username || null,
           first_name: telegramUser.first_name || 'Player',
@@ -73,8 +73,8 @@ module.exports = function setupSocket(io) {
     socket.on('reconnect_game', ({ roomCode }) => {
       if (!authenticatedUser || !roomCode) return;
 
-      // Cancel the 10s abandon timer if they're back in time
-      handleReconnect(authenticatedUser.telegramUser, roomCode);
+      // FIX #1: cancel abandon timer AND resume turn timer
+      handleReconnect(authenticatedUser.telegramUser, roomCode, io);
 
       const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
       if (!snapshot) return socket.emit('error', { error: 'Game not found' });
@@ -83,7 +83,6 @@ module.exports = function setupSocket(io) {
       socket.roomCode = roomCode;
       socket.userId = authenticatedUser.dbUser.id;
 
-      // Tell everyone they're back
       io.to(roomCode).emit('player_reconnected', {
         userId: authenticatedUser.dbUser.id,
         firstName: authenticatedUser.dbUser.first_name,
@@ -91,6 +90,36 @@ module.exports = function setupSocket(io) {
 
       socket.emit('game_snapshot', { ...snapshot });
       console.log(`🔄 ${authenticatedUser.dbUser.first_name} reconnected to ${roomCode}`);
+    });
+
+    // ─── Auto-reconnect: find active game for this user on authenticate ────
+    socket.on('find_active_game', () => {
+      if (!authenticatedUser) return;
+      const { db } = require('../db/queries');
+      // Find any active game this user is still an active player in
+      const row = db.prepare(`
+        SELECT g.room_code FROM games g
+        JOIN game_players gp ON gp.game_id = g.id
+        WHERE g.status = 'active' AND gp.user_id = ? AND gp.status = 'active'
+        LIMIT 1
+      `).get(authenticatedUser.dbUser.id);
+
+      if (row) {
+        // They have an active game — auto-reconnect them
+        const roomCode = row.room_code;
+        handleReconnect(authenticatedUser.telegramUser, roomCode, io);
+        const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
+        socket.join(roomCode);
+        socket.roomCode = roomCode;
+        socket.userId = authenticatedUser.dbUser.id;
+        io.to(roomCode).emit('player_reconnected', {
+          userId: authenticatedUser.dbUser.id,
+          firstName: authenticatedUser.dbUser.first_name,
+        });
+        socket.emit('active_game_found', { roomCode, snapshot });
+      } else {
+        socket.emit('no_active_game', {});
+      }
     });
 
     // ─── Roll Dice ─────────────────────────────────────────────────────────

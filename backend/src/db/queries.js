@@ -70,15 +70,21 @@ db.exec(`
 `);
 
 // ─── User queries ────────────────────────────────────────────────────────────
-const upsertUser = db.prepare(`
+const _insertUser = db.prepare(`
   INSERT INTO users (telegram_id, username, first_name)
   VALUES (@telegram_id, @username, @first_name)
   ON CONFLICT(telegram_id) DO UPDATE SET
     username = excluded.username,
     first_name = excluded.first_name,
     updated_at = CURRENT_TIMESTAMP
-  RETURNING *
 `);
+
+// Bug fix: RETURNING * on upsert returns stale balance (the INSERT default, not the real row).
+// Instead: do the upsert, then SELECT fresh.
+function upsertUser(params) {
+  _insertUser.run(params);
+  return getUserByTelegramId.get(params.telegram_id);
+}
 
 const getUserByTelegramId = db.prepare(`
   SELECT * FROM users WHERE telegram_id = ?

@@ -20,7 +20,7 @@ const {
 router.post('/auth', requireTelegramAuth, (req, res) => {
   try {
     const tgUser = req.telegramUser;
-    const user = upsertUser.get({
+    const user = upsertUser({
       telegram_id: String(tgUser.id),
       username: tgUser.username || null,
       first_name: tgUser.first_name || 'Player',
@@ -74,6 +74,39 @@ router.get('/game/:roomCode', requireTelegramAuth, (req, res) => {
     res.json({ game, players, turns });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch game' });
+  }
+});
+
+/**
+ * POST /api/credits/add
+ * Called by the bot after successful_payment.
+ * Protected by x-bot-secret header.
+ */
+router.post('/credits/add', (req, res) => {
+  const secret = req.headers['x-bot-secret'];
+  const expectedSecret = process.env.BOT_SECRET || 'dev_secret';
+  if (secret !== expectedSecret) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { telegram_id, credits, stars } = req.body;
+  if (!telegram_id || !credits || credits <= 0) {
+    return res.status(400).json({ error: 'Invalid params' });
+  }
+
+  try {
+    const { getUserByTelegramId, addBalance } = require('../db/queries');
+    const user = getUserByTelegramId.get(String(telegram_id));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    addBalance.run(credits, user.id);
+    const updated = getUserByTelegramId.get(String(telegram_id));
+
+    console.log(`⭐ ${stars} stars → +${credits} credits for user ${telegram_id} (new balance: ${updated.balance})`);
+    res.json({ success: true, balance: updated.balance });
+  } catch (err) {
+    console.error('Credits add error:', err);
+    res.status(500).json({ error: 'Failed to add credits' });
   }
 });
 
