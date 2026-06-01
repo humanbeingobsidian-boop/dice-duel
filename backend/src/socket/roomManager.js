@@ -42,11 +42,13 @@ function ensureRoomState(roomCode) {
     rooms.set(roomCode, {
       roomCode,
       timer: null,
+      countdownSecondsLeft: 60,   // FIX #1: track current lobby countdown
       currentPlayerIndex: 0,
       started: false,
       turnTimer: null,
       turnSecondsLeft: 10,
       reconnectTimers: new Map(),
+      reconnectSecondsLeft: new Map(), // FIX #3: remember time remaining per user
     });
   }
   return rooms.get(roomCode);
@@ -87,7 +89,13 @@ function joinGame(telegramUser, io) {
     startGame(game.room_code, io);
   }
 
-  return { game: updatedGame, players: allPlayers, user: dbUser };
+  // FIX #1: tell the joining player the current countdown state
+  const countdownActive = roomState.timer !== null;
+  return {
+    game: updatedGame, players: allPlayers, user: dbUser,
+    countdownActive,
+    countdownSecondsLeft: roomState.countdownSecondsLeft,
+  };
 }
 
 // ─── LEAVE WAITING ROOM ───────────────────────────────────────────────────────
@@ -127,7 +135,7 @@ function leaveWaitingRoom(telegramUser, io) {
   return { user: dbUser, roomCode: row.room_code, refunded: row.entry_fee };
 }
 
-// ─── DISCONNECT DURING ACTIVE GAME — 10s reconnect window ────────────────────
+// ─── DISCONNECT DURING ACTIVE GAME — 30s reconnect window ────────────────────
 function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) return;
@@ -138,36 +146,43 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const roomState = rooms.get(roomCode);
   if (!roomState) return;
 
-  // Cancel any existing reconnect timer for this user
+  // Cancel any existing reconnect timer for this user (they disconnected again)
   if (roomState.reconnectTimers.has(dbUser.id)) {
     clearTimeout(roomState.reconnectTimers.get(dbUser.id));
+    roomState.reconnectTimers.delete(dbUser.id);
+  }
+  const tickKey = `${dbUser.id}_tick`;
+  if (roomState.reconnectTimers.has(tickKey)) {
+    clearInterval(roomState.reconnectTimers.get(tickKey));
+    roomState.reconnectTimers.delete(tickKey);
   }
 
-  let secondsLeft = 10;
-  // Tell everyone this player disconnected and has 10s
+  // FIX #3: resume from saved seconds, or start fresh at 30
+  const savedSeconds = roomState.reconnectSecondsLeft.get(dbUser.id);
+  let secondsLeft = (savedSeconds && savedSeconds > 0) ? savedSeconds : 30; // FIX #2: 30s
+
   io.to(roomCode).emit('player_disconnected', {
     userId: dbUser.id,
     firstName: dbUser.first_name,
     secondsLeft,
   });
 
-  // Countdown tick to everyone
   const tickInterval = setInterval(() => {
     secondsLeft--;
+    // FIX #3: save current seconds so we can resume if they reconnect+disconnect again
+    roomState.reconnectSecondsLeft.set(dbUser.id, secondsLeft);
     io.to(roomCode).emit('reconnect_tick', { userId: dbUser.id, secondsLeft });
     if (secondsLeft <= 0) clearInterval(tickInterval);
   }, 1000);
 
-  // After 10s — eliminate the player for abandoning
   const timeout = setTimeout(() => {
     clearInterval(tickInterval);
     roomState.reconnectTimers.delete(dbUser.id);
+    roomState.reconnectSecondsLeft.delete(dbUser.id);
 
-    // Re-check game is still active
     const freshGame = getGameByRoomCode.get(roomCode);
     if (!freshGame || freshGame.status !== 'active') return;
 
-    // Eliminate them
     eliminatePlayer.run({ game_id: game.id, user_id: dbUser.id });
     recordTurn.run({ game_id: game.id, user_id: dbUser.id, dice_result: 0, was_eliminated: 1 });
 
@@ -179,23 +194,20 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
     });
 
     if (remainingPlayers.length === 1) {
-      // Clear turn timer and end game
       clearTurnTimer(roomState);
       endGame(roomCode, remainingPlayers[0], freshGame, io);
     } else if (remainingPlayers.length === 0) {
       updateGameStatus.run({ status: 'finished', id: game.id });
       rooms.delete(roomCode);
     } else {
-      // Adjust index and start next turn timer
       roomState.currentPlayerIndex = roomState.currentPlayerIndex % remainingPlayers.length;
       clearTurnTimer(roomState);
       startTurnTimer(roomCode, io);
     }
-  }, 10000);
+  }, secondsLeft * 1000);
 
   roomState.reconnectTimers.set(dbUser.id, timeout);
-  // Store tick interval so we can clear it on reconnect
-  roomState.reconnectTimers.set(`${dbUser.id}_tick`, tickInterval);
+  roomState.reconnectTimers.set(tickKey, tickInterval);
 }
 
 // ─── RECONNECT during active game ────────────────────────────────────────────
@@ -206,7 +218,7 @@ function handleReconnect(telegramUser, roomCode) {
   const roomState = rooms.get(roomCode);
   if (!roomState) return false;
 
-  // Cancel the abandon timer
+  // Cancel the abandon timeout
   if (roomState.reconnectTimers.has(dbUser.id)) {
     clearTimeout(roomState.reconnectTimers.get(dbUser.id));
     roomState.reconnectTimers.delete(dbUser.id);
@@ -217,8 +229,17 @@ function handleReconnect(telegramUser, roomCode) {
     clearInterval(roomState.reconnectTimers.get(tickKey));
     roomState.reconnectTimers.delete(tickKey);
   }
+  // FIX #3: DON'T clear reconnectSecondsLeft here — keep it so if they disconnect
+  // again on the same turn, the timer resumes from where it stopped.
+  // It gets cleared only when they actually roll (in _executeRoll).
 
   return true;
+}
+
+// Called from _executeRoll to reset saved reconnect seconds after a successful roll
+function clearReconnectSeconds(userId, roomCode) {
+  const roomState = rooms.get(roomCode);
+  if (roomState) roomState.reconnectSecondsLeft.delete(userId);
 }
 
 // ─── LOBBY COUNTDOWN ─────────────────────────────────────────────────────────
@@ -227,11 +248,12 @@ function startCountdown(roomCode, io) {
   clearTimer(roomState);
 
   let secondsLeft = 60;
-  // FIX #1: emit immediately so all clients sync
+  roomState.countdownSecondsLeft = secondsLeft;
   io.to(roomCode).emit('countdown_started', { secondsLeft });
 
   roomState.timer = setInterval(() => {
     secondsLeft--;
+    roomState.countdownSecondsLeft = secondsLeft;
     io.to(roomCode).emit('countdown_tick', { secondsLeft });
     if (secondsLeft <= 0) {
       clearTimer(roomState);
@@ -322,6 +344,8 @@ function rollDiceForPlayer(roomCode, telegramUserId, io) {
 
 // ─── CORE ROLL LOGIC ─────────────────────────────────────────────────────────
 function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, io) {
+  // FIX #3: player rolled successfully — clear their saved reconnect seconds
+  roomState.reconnectSecondsLeft.delete(userId);
   const diceResult = rollDice();
   const isEliminated = diceResult === 1;
 
@@ -390,7 +414,7 @@ function endGame(roomCode, winner, game, io) {
 }
 
 // ─── SNAPSHOT ────────────────────────────────────────────────────────────────
-function getRoomSnapshot(roomCode) {
+function getRoomSnapshot(roomCode, userId) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game) return null;
   const players = getGamePlayers.all(game.id);
@@ -400,10 +424,15 @@ function getRoomSnapshot(roomCode) {
   if (roomState && activePlayers.length > 0) {
     currentPlayer = activePlayers[roomState.currentPlayerIndex % activePlayers.length];
   }
+  // Tell this user their remaining reconnect window (if any)
+  const reconnectSecondsLeft = userId && roomState
+    ? (roomState.reconnectSecondsLeft.get(userId) ?? null)
+    : null;
   return {
     game, players, activePlayers, currentPlayer,
     started: roomState?.started || false,
     turnSecondsLeft: roomState?.turnSecondsLeft ?? 10,
+    reconnectSecondsLeft,
   };
 }
 

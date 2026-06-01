@@ -55,18 +55,37 @@ export default function GameScreen({
           background: 'rgba(245, 158, 11, 0.1)',
           border: '1px solid rgba(245, 158, 11, 0.4)',
           borderRadius: 'var(--radius)', padding: '12px 16px',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           animation: 'fadeIn 0.3s ease',
         }}>
-          <span style={{ color: 'var(--gold2)', fontSize: '14px' }}>
-            ⚠️ {disconnectedPlayer.firstName} התנתק
-          </span>
-          <span style={{
-            fontFamily: 'Orbitron, sans-serif', fontSize: '18px', fontWeight: 700,
-            color: disconnectedPlayer.secondsLeft <= 3 ? 'var(--danger2)' : 'var(--gold2)',
-          }}>
-            {disconnectedPlayer.secondsLeft}s
-          </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: 'var(--gold2)', fontSize: '14px' }}>
+              ⚠️ {disconnectedPlayer.firstName} התנתק
+            </span>
+            <span style={{
+              fontFamily: 'Orbitron, sans-serif', fontSize: '18px', fontWeight: 700,
+              color: disconnectedPlayer.secondsLeft <= 5 ? 'var(--danger2)' : 'var(--gold2)',
+            }}>
+              {disconnectedPlayer.secondsLeft}s
+            </span>
+          </div>
+          {/* FIX #2: show reconnect button to the disconnected player themselves */}
+          {disconnectedPlayer.userId === myUserId && (
+            <div style={{ marginTop: '10px', textAlign: 'center' }}>
+              <div style={{ color: 'var(--text2)', fontSize: '13px', marginBottom: '8px' }}>
+                אתה מנותק! חזור מהר למשחק
+              </div>
+              <div style={{
+                height: '4px', background: 'var(--bg3)', borderRadius: '2px', overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${(disconnectedPlayer.secondsLeft / 30) * 100}%`,
+                  background: disconnectedPlayer.secondsLeft <= 5 ? 'var(--danger2)' : 'var(--gold2)',
+                  transition: 'width 1s linear, background 0.3s',
+                }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -9,6 +9,7 @@ import WaitingRoomScreen from './screens/WaitingRoomScreen';
 import GameScreen from './screens/GameScreen';
 import ResultScreen from './screens/ResultScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
+import ReconnectScreen from './screens/ReconnectScreen';
 
 // Screens
 const SCREEN = {
@@ -39,7 +40,8 @@ export default function App() {
   const [joining, setJoining] = useState(false);
   const [gameResult, setGameResult] = useState(null);
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(10);
-  const [disconnectedPlayer, setDisconnectedPlayer] = useState(null); // { userId, firstName, secondsLeft }
+  const [disconnectedPlayer, setDisconnectedPlayer] = useState(null);
+  const [myReconnectSeconds, setMyReconnectSeconds] = useState(null); // not null = show reconnect screen
 
   // ─── Initial setup ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -59,13 +61,16 @@ export default function App() {
     const offAuthErr = on('auth_error', ({ error }) => console.error('Auth error:', error));
 
     // Joined waiting room
-    const offJoined = on('joined_game', ({ game, players, user: updatedUser }) => {
+    const offJoined = on('joined_game', ({ game, players, user: updatedUser, countdownActive: ca, countdownSecondsLeft: cs }) => {
       setGame(game);
       setPlayers(players);
       setActivePlayers(players.filter(p => p.status === 'active'));
       if (updatedUser) setUser(updatedUser);
       setJoining(false);
       setJoinError(null);
+      // FIX #1: sync countdown for player who joins mid-countdown
+      if (ca && cs > 0) { setCountdown(cs); setCountdownActive(true); }
+      else { setCountdown(null); setCountdownActive(false); }
       setScreen(SCREEN.WAITING);
     });
     const offJoinErr = on('join_error', ({ error }) => { setJoining(false); setJoinError(error); });
@@ -133,17 +138,27 @@ export default function App() {
     // FIX #6: player disconnected during active game
     const offPlayerDisconnected = on('player_disconnected', ({ userId, firstName, secondsLeft }) => {
       setDisconnectedPlayer({ userId, firstName, secondsLeft });
+      // If it's ME who disconnected (e.g. navigated away and came back)
+      // The server sends this when they reconnect via game_snapshot path
     });
     const offReconnectTick = on('reconnect_tick', ({ userId, secondsLeft }) => {
       setDisconnectedPlayer(d => d?.userId === userId ? { ...d, secondsLeft } : d);
+      // If this tick is for ME, update my reconnect countdown
+      setMyReconnectSeconds(prev => {
+        if (prev !== null) return secondsLeft; // I'm on reconnect screen
+        return prev;
+      });
     });
-    const offPlayerAbandoned = on('player_abandoned', ({ userId, firstName, remainingPlayers }) => {
+    const offPlayerAbandoned = on('player_abandoned', ({ userId, remainingPlayers }) => {
       setDisconnectedPlayer(null);
       setActivePlayers(remainingPlayers);
       setPlayers(prev => prev.map(p => p.user_id === userId ? { ...p, status: 'eliminated' } : p));
+      // If it's me, go to result screen
+      // (game_over will follow if only 1 left)
     });
     const offPlayerReconnected = on('player_reconnected', ({ userId }) => {
       setDisconnectedPlayer(d => d?.userId === userId ? null : d);
+      setMyReconnectSeconds(null);
     });
 
     // Game over
@@ -154,10 +169,16 @@ export default function App() {
     const offGameCancelled = on('game_cancelled', ({ reason }) => { setScreen(SCREEN.LOBBY); setJoinError(reason); });
 
     // Snapshot on reconnect
-    const offSnapshot = on('game_snapshot', ({ game, players, activePlayers, currentPlayer, started, turnSecondsLeft }) => {
+    const offSnapshot = on('game_snapshot', ({ game, players, activePlayers, currentPlayer, started, turnSecondsLeft, reconnectSecondsLeft }) => {
       setGame(game); setPlayers(players); setActivePlayers(activePlayers); setCurrentPlayer(currentPlayer);
       if (turnSecondsLeft !== undefined) setTurnSecondsLeft(turnSecondsLeft);
-      if (started && game.status === 'active') setScreen(SCREEN.GAME);
+      if (started && game.status === 'active') {
+        setScreen(SCREEN.GAME);
+        // If server says I have an active reconnect window, show it
+        if (reconnectSecondsLeft && reconnectSecondsLeft > 0) {
+          setMyReconnectSeconds(reconnectSecondsLeft);
+        }
+      }
       else if (game.status === 'waiting') setScreen(SCREEN.WAITING);
     });
 
@@ -191,6 +212,21 @@ export default function App() {
   const handleLeaveGame = useCallback(() => {
     emit('leave_game');
   }, [emit]);
+
+  const handleReturnToGame = useCallback(() => {
+    // Tell server we're back — cancels the abandon timer
+    if (game?.room_code) {
+      emit('reconnect_game', { roomCode: game.room_code });
+    }
+    setMyReconnectSeconds(null);
+  }, [emit, game]);
+
+  const handleGiveUp = useCallback(() => {
+    // Deliberately abandon — server will eliminate via timeout anyway
+    setMyReconnectSeconds(null);
+    setScreen(SCREEN.RESULT);
+    setGameResult(prev => prev ?? { winner: null, pot: game?.pot ?? 0, prize: 0, houseCut: 0 });
+  }, [game]);
 
   const handlePlayAgain = useCallback(() => {
     setGame(null);
@@ -248,19 +284,28 @@ export default function App() {
 
   if (screen === SCREEN.GAME) {
     return (
-      <GameScreen
-        game={game}
-        players={players}
-        activePlayers={activePlayers}
-        currentPlayer={currentPlayer}
-        myUserId={user?.id}
-        lastRoll={lastRoll}
-        onRoll={handleRoll}
-        rolling={rolling}
-        rollError={rollError}
-        turnSecondsLeft={turnSecondsLeft}
-        disconnectedPlayer={disconnectedPlayer}
-      />
+      <>
+        <GameScreen
+          game={game}
+          players={players}
+          activePlayers={activePlayers}
+          currentPlayer={currentPlayer}
+          myUserId={user?.id}
+          lastRoll={lastRoll}
+          onRoll={handleRoll}
+          rolling={rolling}
+          rollError={rollError}
+          turnSecondsLeft={turnSecondsLeft}
+          disconnectedPlayer={disconnectedPlayer}
+        />
+        {myReconnectSeconds !== null && (
+          <ReconnectScreen
+            secondsLeft={myReconnectSeconds}
+            onReturn={handleReturnToGame}
+            onGiveUp={handleGiveUp}
+          />
+        )}
+      </>
     );
   }
 

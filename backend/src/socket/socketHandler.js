@@ -47,7 +47,11 @@ module.exports = function setupSocket(io) {
         socket.join(roomCode);
         socket.roomCode = roomCode;
         socket.userId = authenticatedUser.dbUser.id;
-        socket.emit('joined_game', { game: result.game, players: result.players, user: result.user, roomCode });
+        socket.emit('joined_game', {
+          game: result.game, players: result.players, user: result.user, roomCode,
+          countdownActive: result.countdownActive,
+          countdownSecondsLeft: result.countdownSecondsLeft,
+        });
         console.log(`👤 ${authenticatedUser.dbUser.first_name} joined room ${roomCode}`);
       } catch (err) {
         const msgs = {
@@ -72,7 +76,7 @@ module.exports = function setupSocket(io) {
       // Cancel the 10s abandon timer if they're back in time
       handleReconnect(authenticatedUser.telegramUser, roomCode);
 
-      const snapshot = getRoomSnapshot(roomCode);
+      const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
       if (!snapshot) return socket.emit('error', { error: 'Game not found' });
 
       socket.join(roomCode);

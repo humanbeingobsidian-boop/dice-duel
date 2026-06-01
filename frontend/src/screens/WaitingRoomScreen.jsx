@@ -5,23 +5,24 @@ import { haptic } from '../utils/telegram';
 const TOTAL_TIME = 60;
 
 export default function WaitingRoomScreen({ game, players, myUserId, countdown, countdownActive, onLeave }) {
+  // FIX #1: timeLeft is driven purely by server ticks — no local interval
   const [timeLeft, setTimeLeft] = useState(countdown ?? TOTAL_TIME);
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
-    if (countdown !== undefined) setTimeLeft(countdown);
+    if (countdown !== null && countdown !== undefined) setTimeLeft(countdown);
   }, [countdown]);
 
-  // Reset timeLeft when countdown resets (player left and restarted)
+  // When countdown resets (new round after player left), jump back to 60
   useEffect(() => {
-    if (countdownActive && countdown === 60) setTimeLeft(60);
-  }, [countdownActive, countdown]);
+    if (!countdownActive) setTimeLeft(TOTAL_TIME);
+  }, [countdownActive]);
 
   const activePlayers = players?.filter(p => p.status === 'active') || [];
   const maxPlayers = game?.max_players || 6;
-  const filledSlots = activePlayers.length;
-  const emptySlots = maxPlayers - filledSlots;
+  const emptySlots = maxPlayers - activePlayers.length;
   const progressPct = countdownActive ? ((TOTAL_TIME - timeLeft) / TOTAL_TIME) * 100 : 0;
+  const timerDanger = countdownActive && timeLeft <= 10;
 
   function handleLeave() {
     haptic('medium');
@@ -30,7 +31,7 @@ export default function WaitingRoomScreen({ game, players, myUserId, countdown, 
   }
 
   return (
-    <div className="screen" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
@@ -48,35 +49,41 @@ export default function WaitingRoomScreen({ game, players, myUserId, countdown, 
         </button>
       </div>
 
-      {/* Countdown */}
+      {/* Countdown — FIX #1: all players see same value driven by server */}
       <div className="card" style={{ textAlign: 'center', padding: '24px' }}>
         {countdownActive ? (
           <>
-            <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '8px' }}>המשחק מתחיל בעוד</div>
-            <div className="font-display" style={{
-              fontSize: '52px',
-              fontWeight: 900,
-              color: timeLeft <= 10 ? 'var(--danger2)' : 'var(--gold2)',
-              lineHeight: 1,
-              transition: 'color 0.3s',
-            }}>
-              {timeLeft}
+            <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '8px' }}>
+              המשחק מתחיל בעוד
             </div>
-            <div style={{ fontSize: '13px', color: 'var(--text3)', marginTop: '4px' }}>שניות</div>
-            <div style={{
-              height: '6px', background: 'var(--bg3)', borderRadius: '3px',
-              marginTop: '16px', overflow: 'hidden',
-            }}>
+
+            {/* Big timer */}
+            <div style={{ position: 'relative', width: '120px', height: '120px', margin: '0 auto 12px' }}>
+              <svg width="120" height="120" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" strokeWidth="6" />
+                <circle
+                  cx="60" cy="60" r="52" fill="none"
+                  stroke={timerDanger ? 'var(--danger2)' : 'var(--accent2)'}
+                  strokeWidth="6"
+                  strokeDasharray={`${2 * Math.PI * 52}`}
+                  strokeDashoffset={`${2 * Math.PI * 52 * (timeLeft / TOTAL_TIME)}`}
+                  strokeLinecap="round"
+                  style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
+                />
+              </svg>
               <div style={{
-                height: '100%',
-                width: `${progressPct}%`,
-                background: timeLeft <= 10
-                  ? 'linear-gradient(90deg, var(--danger), var(--danger2))'
-                  : 'linear-gradient(90deg, var(--accent), var(--gold2))',
-                borderRadius: '3px',
-                transition: 'width 1s linear, background 0.3s',
-              }} />
+                position: 'absolute', inset: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: 'Orbitron, sans-serif',
+                fontSize: '36px', fontWeight: 900,
+                color: timerDanger ? 'var(--danger2)' : 'var(--gold2)',
+                transition: 'color 0.3s',
+              }}>
+                {timeLeft}
+              </div>
             </div>
+
+            <div style={{ fontSize: '13px', color: 'var(--text3)' }}>שניות עד תחילת המשחק</div>
           </>
         ) : (
           <>
@@ -91,13 +98,13 @@ export default function WaitingRoomScreen({ game, players, myUserId, countdown, 
 
       {/* Players grid */}
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: 700 }}>שחקנים</h3>
           <span style={{
             background: 'var(--accent)', color: 'white',
             padding: '3px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 600,
           }}>
-            {filledSlots}/{maxPlayers}
+            {activePlayers.length}/{maxPlayers}
           </span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
@@ -114,8 +121,7 @@ export default function WaitingRoomScreen({ game, players, myUserId, countdown, 
       <div style={{
         background: 'linear-gradient(135deg, rgba(245,158,11,0.1), rgba(251,191,36,0.05))',
         border: '1px solid rgba(245,158,11,0.3)',
-        borderRadius: 'var(--radius)',
-        padding: '16px 20px',
+        borderRadius: 'var(--radius)', padding: '14px 20px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <span style={{ color: 'var(--text2)', fontSize: '14px' }}>💰 קופה כרגע</span>
@@ -133,7 +139,6 @@ export default function WaitingRoomScreen({ game, players, myUserId, countdown, 
 
 function PlayerSlot({ player, isMe }) {
   const name = player.first_name || player.username || 'שחקן';
-  const initials = name.slice(0, 2).toUpperCase();
   return (
     <div style={{
       background: isMe ? 'rgba(124, 58, 237, 0.2)' : 'var(--bg3)',
@@ -147,7 +152,7 @@ function PlayerSlot({ player, isMe }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: '13px', fontWeight: 700, margin: '0 auto 6px', color: 'white',
       }}>
-        {initials}
+        {name.slice(0, 2).toUpperCase()}
       </div>
       <div style={{
         fontSize: '12px', fontWeight: 600,
