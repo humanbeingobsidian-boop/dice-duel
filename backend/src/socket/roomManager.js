@@ -26,15 +26,26 @@ function rollDice() {
   return Math.floor(Math.random() * 6) + 1;
 }
 
-function getOrCreateWaitingRoom() {
-  let game = getWaitingGame.get();
-  if (!game) {
-    let roomCode;
-    do { roomCode = generateRoomCode(); }
-    while (getGameByRoomCode.get(roomCode));
-    game = createGame.get({ room_code: roomCode, entry_fee: 100, house_fee_percent: 10, max_players: 6 });
-  }
-  return { game };
+function getOrCreateWaitingRoom(entryFee = 100) {
+  // Find a waiting game with the matching entry_fee
+  const game = db.prepare(`
+    SELECT g.*, COUNT(gp.id) as player_count
+    FROM games g
+    LEFT JOIN game_players gp ON gp.game_id = g.id AND gp.status = 'active'
+    WHERE g.status = 'waiting' AND g.entry_fee = ?
+    GROUP BY g.id
+    HAVING player_count < g.max_players
+    ORDER BY g.created_at ASC
+    LIMIT 1
+  `).get(entryFee);
+
+  if (game) return { game };
+
+  let roomCode;
+  do { roomCode = generateRoomCode(); }
+  while (getGameByRoomCode.get(roomCode));
+  const newGame = createGame.get({ room_code: roomCode, entry_fee: entryFee, house_fee_percent: 10, max_players: 6 });
+  return { game: newGame };
 }
 
 function ensureRoomState(roomCode) {
@@ -42,13 +53,14 @@ function ensureRoomState(roomCode) {
     rooms.set(roomCode, {
       roomCode,
       timer: null,
-      countdownSecondsLeft: 60,   // FIX #1: track current lobby countdown
+      countdownSecondsLeft: 60,
       currentPlayerIndex: 0,
       started: false,
       turnTimer: null,
       turnSecondsLeft: 10,
       reconnectTimers: new Map(),
-      reconnectSecondsLeft: new Map(), // FIX #3: remember time remaining per user
+      reconnectSecondsLeft: new Map(),
+      readyPlayers: new Set(), // FIX #4: track ready players
     });
   }
   return rooms.get(roomCode);
@@ -63,12 +75,12 @@ function clearTurnTimer(roomState) {
 }
 
 // ─── JOIN ─────────────────────────────────────────────────────────────────────
-function joinGame(telegramUser, io) {
+function joinGame(telegramUser, io, entryFee = 100) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) throw new Error('USER_NOT_FOUND');
-  if (dbUser.balance < 100) throw new Error('INSUFFICIENT_BALANCE');
+  if (dbUser.balance < entryFee) throw new Error('INSUFFICIENT_BALANCE');
 
-  const { game } = getOrCreateWaitingRoom();
+  const { game } = getOrCreateWaitingRoom(entryFee);
   if (isPlayerInGame.get(game.id, dbUser.id)) throw new Error('ALREADY_IN_GAME');
 
   const currentPlayers = getGamePlayers.all(game.id);
@@ -135,7 +147,39 @@ function leaveWaitingRoom(telegramUser, io) {
   return { user: dbUser, roomCode: row.room_code, refunded: row.entry_fee };
 }
 
-// ─── DISCONNECT DURING ACTIVE GAME — 30s reconnect window ────────────────────
+// ─── READY TOGGLE ────────────────────────────────────────────────────────────
+function toggleReady(telegramUser, roomCode, io) {
+  const dbUser = getUserByTelegramId.get(String(telegramUser.id));
+  if (!dbUser) throw new Error('USER_NOT_FOUND');
+
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'waiting') throw new Error('NOT_IN_WAITING_ROOM');
+
+  const roomState = ensureRoomState(roomCode);
+  const userId = dbUser.id;
+
+  if (roomState.readyPlayers.has(userId)) {
+    roomState.readyPlayers.delete(userId);
+  } else {
+    roomState.readyPlayers.add(userId);
+  }
+
+  const allPlayers = getGamePlayers.all(game.id);
+  const activePlayers = allPlayers.filter(p => p.status === 'active');
+  const readyCount = activePlayers.filter(p => roomState.readyPlayers.has(p.user_id)).length;
+  const readyUserIds = Array.from(roomState.readyPlayers);
+
+  io.to(roomCode).emit('ready_updated', { readyUserIds, readyCount, totalCount: activePlayers.length });
+
+  // All players ready + at least 2 → start immediately
+  if (activePlayers.length >= 2 && readyCount === activePlayers.length) {
+    clearTimer(roomState);
+    io.to(roomCode).emit('all_ready', {});
+    setTimeout(() => startGame(roomCode, io), 1500); // small delay so UI can show "all ready"
+  }
+
+  return { isReady: roomState.readyPlayers.has(userId), readyUserIds };
+}
 function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) return;
@@ -446,7 +490,7 @@ function getRoomSnapshot(roomCode, userId) {
 }
 
 module.exports = {
-  joinGame, leaveWaitingRoom, rollDiceForPlayer,
+  joinGame, leaveWaitingRoom, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect,
   getRoomSnapshot, ensureRoomState,
 };

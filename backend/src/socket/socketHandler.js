@@ -2,7 +2,7 @@
 const { validateTelegramData } = require('../middleware/telegramAuth');
 const { upsertUser, getUserByTelegramId } = require('../db/queries');
 const {
-  joinGame, leaveWaitingRoom, rollDiceForPlayer,
+  joinGame, leaveWaitingRoom, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect, getRoomSnapshot,
 } = require('./roomManager');
 
@@ -39,10 +39,11 @@ module.exports = function setupSocket(io) {
     });
 
     // ─── Join Game ─────────────────────────────────────────────────────────
-    socket.on('join_game', () => {
+    socket.on('join_game', ({ entryFee = 100 } = {}) => {
       if (!authenticatedUser) return socket.emit('error', { error: 'Not authenticated' });
+      const fee = [5, 100].includes(Number(entryFee)) ? Number(entryFee) : 100;
       try {
-        const result = joinGame(authenticatedUser.telegramUser, io);
+        const result = joinGame(authenticatedUser.telegramUser, io, fee);
         const roomCode = result.game.room_code;
         socket.join(roomCode);
         socket.roomCode = roomCode;
@@ -52,14 +53,24 @@ module.exports = function setupSocket(io) {
           countdownActive: result.countdownActive,
           countdownSecondsLeft: result.countdownSecondsLeft,
         });
-        console.log(`👤 ${authenticatedUser.dbUser.first_name} joined room ${roomCode}`);
+        console.log(`👤 ${authenticatedUser.dbUser.first_name} joined room ${roomCode} (fee:${fee})`);
       } catch (err) {
         const msgs = {
-          INSUFFICIENT_BALANCE: 'אין מספיק קרדיטים (צריך 100)',
+          INSUFFICIENT_BALANCE: `אין מספיק קרדיטים (צריך ${fee})`,
           ALREADY_IN_GAME: 'אתה כבר בחדר זה',
           USER_NOT_FOUND: 'משתמש לא נמצא',
         };
         socket.emit('join_error', { error: msgs[err.message] || 'שגיאה בהצטרפות' });
+      }
+    });
+
+    // ─── Toggle Ready ───────────────────────────────────────────────────────
+    socket.on('toggle_ready', () => {
+      if (!authenticatedUser || !socket.roomCode) return;
+      try {
+        toggleReady(authenticatedUser.telegramUser, socket.roomCode, io);
+      } catch (err) {
+        socket.emit('error', { error: err.message });
       }
     });
 

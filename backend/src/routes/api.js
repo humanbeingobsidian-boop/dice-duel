@@ -17,25 +17,25 @@ const {
 // ─── Prize catalog ────────────────────────────────────────────────────────────
 const PRIZES = [
   {
-    id: 'gift_100stars',
-    label: '🎁 Gift — 100 כוכבי Telegram',
-    description: 'תקבל Gift ששווה 100 Telegram Stars דרך הבוט',
-    cost: 100,
+    id: 'gift_15stars',
+    label: '🎁 Gift — 15 כוכבי Telegram',
+    description: 'תקבל Gift ששווה 15 Telegram Stars דרך הבוט',
+    cost: 15,
     emoji: '🎁',
   },
   {
-    id: 'gift_500stars',
-    label: '🌟 Gift — 500 כוכבי Telegram',
-    description: 'תקבל Gift ששווה 500 Telegram Stars דרך הבוט',
-    cost: 500,
-    emoji: '🌟',
+    id: 'gift_100stars',
+    label: '⭐ Gift — 100 כוכבי Telegram',
+    description: 'תקבל Gift ששווה 100 Telegram Stars דרך הבוט',
+    cost: 100,
+    emoji: '⭐',
   },
   {
-    id: 'mystery_nft',
-    label: '🖼️ Mystery NFT',
-    description: 'NFT רנדומלי של Telegram — יישלח ידנית תוך 24 שעות',
+    id: 'gift_1000stars',
+    label: '💫 Gift — 1000 כוכבי Telegram',
+    description: 'תקבל Gift ששווה 1000 Telegram Stars דרך הבוט',
     cost: 1000,
-    emoji: '🖼️',
+    emoji: '💫',
   },
 ];
 

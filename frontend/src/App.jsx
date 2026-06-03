@@ -11,6 +11,7 @@ import ResultScreen from './screens/ResultScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import ReconnectScreen from './screens/ReconnectScreen';
 import PrizesScreen from './screens/PrizesScreen';
+import LanguageSwitcher from './components/LanguageSwitcher';
 
 // Screens
 const SCREEN = {
@@ -28,6 +29,7 @@ export default function App() {
 
   // App state
   const [screen, setScreen] = useState(SCREEN.SPLASH);
+  const [lang, setLang] = useState(() => localStorage.getItem('lang') || 'en');
   const [user, setUser] = useState(null);
   const [game, setGame] = useState(null);
   const [players, setPlayers] = useState([]);
@@ -43,7 +45,14 @@ export default function App() {
   const [gameResult, setGameResult] = useState(null);
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(10);
   const [disconnectedPlayer, setDisconnectedPlayer] = useState(null);
-  const [myReconnectSeconds, setMyReconnectSeconds] = useState(null); // not null = show reconnect screen
+  const [myReconnectSeconds, setMyReconnectSeconds] = useState(null);
+  const [readyPlayers, setReadyPlayers] = useState([]); // userIds who are ready
+  const [selectedFee, setSelectedFee] = useState(5); // entry fee for next game
+
+  const handleLangChange = useCallback((code) => {
+    setLang(code);
+    localStorage.setItem('lang', code);
+  }, []);
 
   // ─── Initial setup ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -134,6 +143,12 @@ export default function App() {
       setScreen(SCREEN.GAME);
     });
 
+    // Ready system
+    const offReadyUpdated = on('ready_updated', ({ readyUserIds }) => {
+      setReadyPlayers(readyUserIds);
+    });
+    const offAllReady = on('all_ready', () => {});
+
     // FIX #2: turn timer from server
     const offTurnTick = on('turn_timer_tick', ({ secondsLeft }) => setTurnSecondsLeft(secondsLeft));
 
@@ -213,6 +228,7 @@ export default function App() {
       offJoined(); offJoinErr();
       offPlayerJoined(); offPlayerLeft(); offLeftGame();
       offCountdownStart(); offCountdownTick(); offCountdownStopped();
+      offReadyUpdated(); offAllReady();
       offGameStarted(); offTurnTick(); offDiceRolled(); offRollErr();
       offNextTurn(); offPlayerDisconnected(); offReconnectTick();
       offPlayerAbandoned(); offPlayerReconnected();
@@ -224,7 +240,11 @@ export default function App() {
   const handleJoinGame = useCallback(() => {
     setJoining(true);
     setJoinError(null);
-    emit('join_game');
+    emit('join_game', { entryFee: selectedFee });
+  }, [emit, selectedFee]);
+
+  const handleToggleReady = useCallback(() => {
+    emit('toggle_ready');
   }, [emit]);
 
   const handleRoll = useCallback(() => {
@@ -254,67 +274,91 @@ export default function App() {
   }, [game]);
 
   const handlePlayAgain = useCallback(() => {
-    setGame(null);
-    setPlayers([]);
-    setActivePlayers([]);
-    setCurrentPlayer(null);
-    setLastRoll(null);
-    setGameResult(null);
-    setCountdown(null);
-    setCountdownActive(false);
-    setDisconnectedPlayer(null);
-    setTurnSecondsLeft(10);
+    setGame(null); setPlayers([]); setActivePlayers([]);
+    setCurrentPlayer(null); setLastRoll(null); setGameResult(null);
+    setCountdown(null); setCountdownActive(false);
+    setDisconnectedPlayer(null); setTurnSecondsLeft(10);
+    setReadyPlayers([]);
     setScreen(SCREEN.LOBBY);
   }, []);
 
+  // ─── Language switcher overlay (top-right on all screens) ────────────────────
+  const LangBar = () => (
+    <div style={{
+      position: 'fixed', top: 12, right: 12, zIndex: 200,
+    }}>
+      <LanguageSwitcher lang={lang} onChange={handleLangChange} />
+    </div>
+  );
+
   // ─── Render ──────────────────────────────────────────────────────────────────
   if (screen === SCREEN.SPLASH) {
-    return <SplashScreen onEnter={() => setScreen(SCREEN.LOBBY)} />;
+    return <><SplashScreen lang={lang} onEnter={() => setScreen(SCREEN.LOBBY)} /><LangBar /></>;
   }
 
   if (screen === SCREEN.PRIZES) {
     return (
-      <PrizesScreen
-        user={user}
-        onBack={() => setScreen(SCREEN.LOBBY)}
-        onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)}
-      />
+      <>
+        <PrizesScreen
+          lang={lang}
+          user={user}
+          onBack={() => setScreen(SCREEN.LOBBY)}
+          onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)}
+        />
+        <LangBar />
+      </>
     );
   }
 
   if (screen === SCREEN.LEADERBOARD) {
     return (
-      <LeaderboardScreen
-        onBack={() => setScreen(SCREEN.LOBBY)}
-        myTelegramId={user?.telegram_id}
-      />
+      <>
+        <LeaderboardScreen
+          lang={lang}
+          onBack={() => setScreen(SCREEN.LOBBY)}
+          myTelegramId={user?.telegram_id}
+        />
+        <LangBar />
+      </>
     );
   }
 
   if (screen === SCREEN.LOBBY) {
     return (
-      <LobbyScreen
-        user={user}
-        onJoin={handleJoinGame}
-        onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
-        onPrizes={() => setScreen(SCREEN.PRIZES)}
-        onBack={() => setScreen(SCREEN.SPLASH)}
-        loading={joining}
-        error={joinError}
-      />
+      <>
+        <LobbyScreen
+          lang={lang}
+          user={user}
+          onJoin={handleJoinGame}
+          onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
+          onPrizes={() => setScreen(SCREEN.PRIZES)}
+          onBack={() => setScreen(SCREEN.SPLASH)}
+          loading={joining}
+          error={joinError}
+          selectedFee={selectedFee}
+          onFeeChange={setSelectedFee}
+        />
+        <LangBar />
+      </>
     );
   }
 
   if (screen === SCREEN.WAITING) {
     return (
-      <WaitingRoomScreen
-        game={game}
-        players={players}
-        myUserId={user?.id}
-        countdown={countdown}
-        countdownActive={countdownActive}
-        onLeave={handleLeaveGame}
-      />
+      <>
+        <WaitingRoomScreen
+          lang={lang}
+          game={game}
+          players={players}
+          myUserId={user?.id}
+          countdown={countdown}
+          countdownActive={countdownActive}
+          onLeave={handleLeaveGame}
+          readyPlayers={readyPlayers}
+          onToggleReady={handleToggleReady}
+        />
+        <LangBar />
+      </>
     );
   }
 
@@ -322,6 +366,7 @@ export default function App() {
     return (
       <>
         <GameScreen
+          lang={lang}
           game={game}
           players={players}
           activePlayers={activePlayers}
@@ -336,26 +381,32 @@ export default function App() {
         />
         {myReconnectSeconds !== null && (
           <ReconnectScreen
+            lang={lang}
             secondsLeft={myReconnectSeconds}
             onReturn={handleReturnToGame}
             onGiveUp={handleGiveUp}
           />
         )}
+        <LangBar />
       </>
     );
   }
 
   if (screen === SCREEN.RESULT) {
     return (
-      <ResultScreen
-        winner={gameResult?.winner}
-        pot={gameResult?.pot}
-        prize={gameResult?.prize}
-        houseCut={gameResult?.houseCut}
-        myUserId={user?.id}
-        onPlayAgain={handlePlayAgain}
-        onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
-      />
+      <>
+        <ResultScreen
+          lang={lang}
+          winner={gameResult?.winner}
+          pot={gameResult?.pot}
+          prize={gameResult?.prize}
+          houseCut={gameResult?.houseCut}
+          myUserId={user?.id}
+          onPlayAgain={handlePlayAgain}
+          onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
+        />
+        <LangBar />
+      </>
     );
   }
 
