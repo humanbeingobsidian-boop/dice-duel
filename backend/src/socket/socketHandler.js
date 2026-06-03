@@ -166,8 +166,10 @@ function _doLeaveWaiting(socket, authenticatedUser, io) {
     const result = leaveWaitingRoom(authenticatedUser.telegramUser, io);
     socket.leave(result.roomCode);
     socket.roomCode = null;
-    socket.emit('left_game', { refunded: result.refunded });
-    console.log(`👋 ${authenticatedUser.dbUser.first_name} left waiting room ${result.roomCode}`);
+    // Send real DB balance — not a calculated delta (prevents double-add bugs)
+    const freshUser = getUserByTelegramId.get(String(authenticatedUser.telegramUser.id));
+    socket.emit('left_game', { balance: freshUser.balance });
+    console.log(`👋 ${authenticatedUser.dbUser.first_name} left waiting room ${result.roomCode}, balance: ${freshUser.balance}`);
     return true;
   } catch (err) {
     if (err.message !== 'NOT_IN_WAITING_ROOM') {

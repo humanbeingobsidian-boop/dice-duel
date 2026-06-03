@@ -109,10 +109,10 @@ export default function App() {
       setActivePlayers(players.filter(p => p.status === 'active'));
       setGame(g => g ? { ...g, pot } : g);
     });
-    const offLeftGame = on('left_game', ({ refunded }) => {
+    const offLeftGame = on('left_game', ({ balance }) => {
       setGame(null); setPlayers([]); setActivePlayers([]);
       setCountdown(null); setCountdownActive(false);
-      setUser(u => u ? { ...u, balance: (u.balance ?? 0) + refunded } : u);
+      setUser(u => u ? { ...u, balance } : u);
       setScreen(SCREEN.LOBBY);
     });
 
