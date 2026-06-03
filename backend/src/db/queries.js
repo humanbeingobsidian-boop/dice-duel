@@ -67,6 +67,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_games_room_code ON games(room_code);
   CREATE INDEX IF NOT EXISTS idx_game_players_game_id ON game_players(game_id);
   CREATE INDEX IF NOT EXISTS idx_turns_game_id ON turns(game_id);
+
+  CREATE TABLE IF NOT EXISTS prize_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    prize_id TEXT NOT NULL,
+    prize_label TEXT NOT NULL,
+    cost INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sent','failed')),
+    telegram_id TEXT NOT NULL,
+    username TEXT,
+    first_name TEXT,
+    admin_note TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME
+  );
+  CREATE INDEX IF NOT EXISTS idx_prize_orders_status ON prize_orders(status);
 `);
 
 // ─── User queries ────────────────────────────────────────────────────────────
@@ -235,25 +251,71 @@ const subtractPot = db.prepare(`
 `);
 
 const leaveGameTransaction = db.transaction((userId, gameId, entryFee) => {
+  // Guard: only refund if player is actually still in the game
+  const stillIn = db.prepare(
+    `SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ?`
+  ).get(gameId, userId);
+  if (!stillIn) return false; // already removed, don't double-refund
   removePlayerFromGame.run({ game_id: gameId, user_id: userId });
   subtractPot.run(entryFee, gameId);
-  addBalance.run(entryFee, userId); // full refund
+  addBalance.run(entryFee, userId);
   return true;
 });
 
 const finalizeGameTransaction = db.transaction((gameId, winnerId, prize, houseFee) => {
+  // Guard: only pay out if game not already finished
+  const game = db.prepare(`SELECT status FROM games WHERE id = ?`).get(gameId);
+  if (!game || game.status === 'finished') return false;
+
   updateGameWinner.run({ game_id: gameId, winner_user_id: winnerId });
   setPlayerWinner.run({ game_id: gameId, user_id: winnerId });
   addBalance.run(prize, winnerId);
   incrementStats.run({ user_id: winnerId, wins: 1 });
 
-  // Update all eliminated players stats
   const allPlayers = getGamePlayers.all(gameId);
   for (const p of allPlayers) {
     if (p.user_id !== winnerId) {
       incrementStats.run({ user_id: p.user_id, wins: 0 });
     }
   }
+  return true;
+});
+
+// ─── Prize queries ────────────────────────────────────────────────────────────
+const createPrizeOrder = db.prepare(`
+  INSERT INTO prize_orders (user_id, prize_id, prize_label, cost, telegram_id, username, first_name)
+  VALUES (@user_id, @prize_id, @prize_label, @cost, @telegram_id, @username, @first_name)
+  RETURNING *
+`);
+
+const getPrizeOrders = db.prepare(`
+  SELECT * FROM prize_orders ORDER BY created_at DESC LIMIT 50
+`);
+
+const getPendingOrders = db.prepare(`
+  SELECT * FROM prize_orders WHERE status = 'pending' ORDER BY created_at ASC
+`);
+
+const markOrderSent = db.prepare(`
+  UPDATE prize_orders SET status = 'sent', sent_at = CURRENT_TIMESTAMP, admin_note = @note
+  WHERE id = @id
+`);
+
+const buyPrizeTransaction = db.transaction((userId, telegramId, username, firstName, prize) => {
+  // Check and deduct balance atomically
+  const deducted = deductBalance.run(prize.cost, userId, prize.cost);
+  if (deducted.changes === 0) throw new Error('INSUFFICIENT_BALANCE');
+  // Create order
+  const order = createPrizeOrder.get({
+    user_id: userId,
+    prize_id: prize.id,
+    prize_label: prize.label,
+    cost: prize.cost,
+    telegram_id: telegramId,
+    username: username || null,
+    first_name: firstName,
+  });
+  return order;
 });
 
 module.exports = {
@@ -281,4 +343,9 @@ module.exports = {
   joinGameTransaction,
   leaveGameTransaction,
   finalizeGameTransaction,
+  createPrizeOrder,
+  getPrizeOrders,
+  getPendingOrders,
+  markOrderSent,
+  buyPrizeTransaction,
 };

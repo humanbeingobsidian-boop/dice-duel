@@ -171,6 +171,67 @@ function startBot() {
 
   bot.catch((err) => console.error('Bot error:', err));
 
+  // ─── Admin: /sent_<orderId> ───────────────────────────────────────────────
+  bot.command('sent', async (ctx) => {
+    const adminId = process.env.ADMIN_TELEGRAM_ID;
+    if (String(ctx.from.id) !== String(adminId)) return;
+
+    const parts = ctx.message.text.split('_');
+    const orderId = parts[1];
+    if (!orderId) return ctx.reply('שימוש: /sent_<orderId>');
+
+    try {
+      const { markOrderSent, db } = require('./db/queries');
+      const order = db.prepare('SELECT * FROM prize_orders WHERE id = ?').get(orderId);
+      if (!order) return ctx.reply(`❌ הזמנה ${orderId} לא נמצאה`);
+      if (order.status === 'sent') return ctx.reply(`✅ הזמנה ${orderId} כבר סומנה כנשלחה`);
+
+      markOrderSent.run({ id: orderId, note: 'נשלח על ידי אדמין דרך בוט' });
+
+      // Notify the user their prize is on the way
+      try {
+        await bot.api.sendMessage(
+          order.telegram_id,
+          `🎁 *הפרס שלך נשלח!*\n\n` +
+          `${order.prize_label}\n\n` +
+          `אם לא קיבלת תוך 10 דקות, פנה לתמיכה.`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (e) {
+        console.error('Could not notify user:', e.message);
+      }
+
+      await ctx.reply(`✅ הזמנה ${orderId} סומנה כנשלחה\nהמשתמש קיבל הודעה.`);
+    } catch (err) {
+      console.error('Mark sent error:', err);
+      await ctx.reply('שגיאה בעדכון הזמנה');
+    }
+  });
+
+  // ─── Admin: /orders — list pending ───────────────────────────────────────
+  bot.command('orders', async (ctx) => {
+    const adminId = process.env.ADMIN_TELEGRAM_ID;
+    if (String(ctx.from.id) !== String(adminId)) return;
+
+    const { getPendingOrders } = require('./db/queries');
+    const orders = getPendingOrders.all();
+
+    if (orders.length === 0) {
+      return ctx.reply('✅ אין הזמנות ממתינות');
+    }
+
+    const text = orders.map(o =>
+      `🆔 ${o.id} | ${o.first_name} (@${o.username || o.telegram_id})\n` +
+      `🎁 ${o.prize_label}\n` +
+      `📅 ${new Date(o.created_at).toLocaleString('he-IL')}\n` +
+      `/sent_${o.id}`
+    ).join('\n\n');
+
+    await ctx.reply(`📋 *הזמנות ממתינות (${orders.length}):*\n\n${text}`, {
+      parse_mode: 'Markdown',
+    });
+  });
+
   // הפעל polling — לא חוסם את ה-event loop
   bot.start({
     onStart: (info) => console.log(`🤖 Bot @${info.username} running`),

@@ -10,6 +10,7 @@ import GameScreen from './screens/GameScreen';
 import ResultScreen from './screens/ResultScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import ReconnectScreen from './screens/ReconnectScreen';
+import PrizesScreen from './screens/PrizesScreen';
 
 // Screens
 const SCREEN = {
@@ -19,6 +20,7 @@ const SCREEN = {
   GAME: 'game',
   RESULT: 'result',
   LEADERBOARD: 'leaderboard',
+  PRIZES: 'prizes',
 };
 
 export default function App() {
@@ -270,6 +272,16 @@ export default function App() {
     return <SplashScreen onEnter={() => setScreen(SCREEN.LOBBY)} />;
   }
 
+  if (screen === SCREEN.PRIZES) {
+    return (
+      <PrizesScreen
+        user={user}
+        onBack={() => setScreen(SCREEN.LOBBY)}
+        onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)}
+      />
+    );
+  }
+
   if (screen === SCREEN.LEADERBOARD) {
     return (
       <LeaderboardScreen
@@ -285,6 +297,7 @@ export default function App() {
         user={user}
         onJoin={handleJoinGame}
         onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
+        onPrizes={() => setScreen(SCREEN.PRIZES)}
         onBack={() => setScreen(SCREEN.SPLASH)}
         loading={joining}
         error={joinError}

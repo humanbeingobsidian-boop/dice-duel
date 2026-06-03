@@ -2,7 +2,7 @@
 import React from 'react';
 import { haptic } from '../utils/telegram';
 
-export default function LobbyScreen({ user, onJoin, onLeaderboard, onBack, loading, error }) {
+export default function LobbyScreen({ user, onJoin, onLeaderboard, onPrizes, onBack, loading, error }) {
   return (
     <div className="screen" style={{
       background: 'radial-gradient(ellipse at 50% 20%, #1a0a3a 0%, var(--bg) 60%)',
@@ -199,14 +199,23 @@ export default function LobbyScreen({ user, onJoin, onLeaderboard, onBack, loadi
         </div>
       )}
 
-      {/* Leaderboard button */}
-      <button
-        className="btn btn-ghost"
-        style={{ maxWidth: '360px', width: '100%' }}
-        onClick={() => { haptic('light'); onLeaderboard(); }}
-      >
-        🏅 לוח מצטיינים
-      </button>
+      {/* Bottom buttons */}
+      <div style={{ display: 'flex', gap: '10px', width: '100%', maxWidth: '360px' }}>
+        <button
+          className="btn btn-ghost"
+          style={{ flex: 1 }}
+          onClick={() => { haptic('light'); onLeaderboard(); }}
+        >
+          🏅 מצטיינים
+        </button>
+        <button
+          className="btn btn-ghost"
+          style={{ flex: 1 }}
+          onClick={() => { haptic('light'); onPrizes(); }}
+        >
+          🏆 פרסים
+        </button>
+      </div>
     </div>
   );
 }
