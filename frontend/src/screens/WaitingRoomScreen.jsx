@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { haptic } from '../utils/telegram';
 import { t } from '../utils/i18n';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const TOTAL_TIME = 60;
 
@@ -12,7 +13,7 @@ function truncateName(name, max = 10) {
 }
 
 export default function WaitingRoomScreen({
-  lang = 'en', game, players, myUserId,
+  lang = 'en', onLangChange, game, players, myUserId,
   countdown, countdownActive,
   onLeave, readyPlayers = [], onToggleReady,
 }) {
@@ -44,17 +45,20 @@ export default function WaitingRoomScreen({
   return (
     <div className="screen" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
-        <div>
-          <h2 style={{ fontSize: '20px', fontWeight: 700 }}>{t('waiting_title', lang)}</h2>
-          <p style={{ color: 'var(--text2)', fontSize: '13px', marginTop: '2px' }}>
-            {t('waiting_room', lang)} #{game?.room_code}
-          </p>
+      {/* Header — title left, lang switcher right, leave button below */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '4px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ fontSize: '20px', fontWeight: 700 }}>{t('waiting_title', lang)}</h2>
+            <p style={{ color: 'var(--text2)', fontSize: '13px', marginTop: '2px' }}>
+              {t('waiting_room', lang)} #{game?.room_code}
+            </p>
+          </div>
+          <LanguageSwitcher lang={lang} onChange={onLangChange} />
         </div>
         <button
           className="btn btn-danger"
-          style={{ padding: '10px 16px', fontSize: '14px' }}
+          style={{ alignSelf: 'flex-start', padding: '8px 16px', fontSize: '13px' }}
           onClick={() => { haptic('medium'); setLeaving(true); onLeave(); }}
           disabled={leaving}
         >

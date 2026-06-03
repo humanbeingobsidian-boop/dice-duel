@@ -11,7 +11,6 @@ import ResultScreen from './screens/ResultScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import ReconnectScreen from './screens/ReconnectScreen';
 import PrizesScreen from './screens/PrizesScreen';
-import LanguageSwitcher from './components/LanguageSwitcher';
 
 // Screens
 const SCREEN = {
@@ -282,83 +281,59 @@ export default function App() {
     setScreen(SCREEN.LOBBY);
   }, []);
 
-  // ─── Language switcher overlay (top-right on all screens) ────────────────────
-  const LangBar = () => (
-    <div style={{
-      position: 'fixed', top: 12, right: 12, zIndex: 200,
-    }}>
-      <LanguageSwitcher lang={lang} onChange={handleLangChange} />
-    </div>
-  );
-
   // ─── Render ──────────────────────────────────────────────────────────────────
   if (screen === SCREEN.SPLASH) {
-    return <><SplashScreen lang={lang} onEnter={() => setScreen(SCREEN.LOBBY)} /><LangBar /></>;
+    return <SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} />;
   }
 
   if (screen === SCREEN.PRIZES) {
     return (
-      <>
-        <PrizesScreen
-          lang={lang}
-          user={user}
-          onBack={() => setScreen(SCREEN.LOBBY)}
-          onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)}
-        />
-        <LangBar />
-      </>
+      <PrizesScreen
+        lang={lang} onLangChange={handleLangChange}
+        user={user}
+        onBack={() => setScreen(SCREEN.LOBBY)}
+        onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)}
+      />
     );
   }
 
   if (screen === SCREEN.LEADERBOARD) {
     return (
-      <>
-        <LeaderboardScreen
-          lang={lang}
-          onBack={() => setScreen(SCREEN.LOBBY)}
-          myTelegramId={user?.telegram_id}
-        />
-        <LangBar />
-      </>
+      <LeaderboardScreen
+        lang={lang} onLangChange={handleLangChange}
+        onBack={() => setScreen(SCREEN.LOBBY)}
+        myTelegramId={user?.telegram_id}
+      />
     );
   }
 
   if (screen === SCREEN.LOBBY) {
     return (
-      <>
-        <LobbyScreen
-          lang={lang}
-          user={user}
-          onJoin={handleJoinGame}
-          onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
-          onPrizes={() => setScreen(SCREEN.PRIZES)}
-          onBack={() => setScreen(SCREEN.SPLASH)}
-          loading={joining}
-          error={joinError}
-          selectedFee={selectedFee}
-          onFeeChange={setSelectedFee}
-        />
-        <LangBar />
-      </>
+      <LobbyScreen
+        lang={lang} onLangChange={handleLangChange}
+        user={user}
+        onJoin={handleJoinGame}
+        onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
+        onPrizes={() => setScreen(SCREEN.PRIZES)}
+        onBack={() => setScreen(SCREEN.SPLASH)}
+        loading={joining}
+        error={joinError}
+        selectedFee={selectedFee}
+        onFeeChange={setSelectedFee}
+      />
     );
   }
 
   if (screen === SCREEN.WAITING) {
     return (
-      <>
-        <WaitingRoomScreen
-          lang={lang}
-          game={game}
-          players={players}
-          myUserId={user?.id}
-          countdown={countdown}
-          countdownActive={countdownActive}
-          onLeave={handleLeaveGame}
-          readyPlayers={readyPlayers}
-          onToggleReady={handleToggleReady}
-        />
-        <LangBar />
-      </>
+      <WaitingRoomScreen
+        lang={lang} onLangChange={handleLangChange}
+        game={game} players={players} myUserId={user?.id}
+        countdown={countdown} countdownActive={countdownActive}
+        onLeave={handleLeaveGame}
+        readyPlayers={readyPlayers}
+        onToggleReady={handleToggleReady}
+      />
     );
   }
 
@@ -367,46 +342,32 @@ export default function App() {
       <>
         <GameScreen
           lang={lang}
-          game={game}
-          players={players}
-          activePlayers={activePlayers}
-          currentPlayer={currentPlayer}
-          myUserId={user?.id}
-          lastRoll={lastRoll}
-          onRoll={handleRoll}
-          rolling={rolling}
-          rollError={rollError}
-          turnSecondsLeft={turnSecondsLeft}
-          disconnectedPlayer={disconnectedPlayer}
+          game={game} players={players} activePlayers={activePlayers}
+          currentPlayer={currentPlayer} myUserId={user?.id}
+          lastRoll={lastRoll} onRoll={handleRoll}
+          rolling={rolling} rollError={rollError}
+          turnSecondsLeft={turnSecondsLeft} disconnectedPlayer={disconnectedPlayer}
         />
         {myReconnectSeconds !== null && (
           <ReconnectScreen
-            lang={lang}
-            secondsLeft={myReconnectSeconds}
-            onReturn={handleReturnToGame}
-            onGiveUp={handleGiveUp}
+            lang={lang} secondsLeft={myReconnectSeconds}
+            onReturn={handleReturnToGame} onGiveUp={handleGiveUp}
           />
         )}
-        <LangBar />
       </>
     );
   }
 
   if (screen === SCREEN.RESULT) {
     return (
-      <>
-        <ResultScreen
-          lang={lang}
-          winner={gameResult?.winner}
-          pot={gameResult?.pot}
-          prize={gameResult?.prize}
-          houseCut={gameResult?.houseCut}
-          myUserId={user?.id}
-          onPlayAgain={handlePlayAgain}
-          onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
-        />
-        <LangBar />
-      </>
+      <ResultScreen
+        lang={lang}
+        winner={gameResult?.winner} pot={gameResult?.pot}
+        prize={gameResult?.prize} houseCut={gameResult?.houseCut}
+        myUserId={user?.id}
+        onPlayAgain={handlePlayAgain}
+        onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
+      />
     );
   }
 

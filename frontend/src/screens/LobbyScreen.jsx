@@ -2,9 +2,10 @@
 import React from 'react';
 import { haptic } from '../utils/telegram';
 import { t } from '../utils/i18n';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 export default function LobbyScreen({
-  lang = 'en', user, onJoin, onLeaderboard, onPrizes, onBack,
+  lang = 'en', onLangChange, user, onJoin, onLeaderboard, onPrizes, onBack,
   loading, error, selectedFee = 5, onFeeChange,
 }) {
   const tables = [
@@ -18,12 +19,13 @@ export default function LobbyScreen({
       padding: '24px', gap: '16px',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     }}>
-      {/* Back */}
-      <div style={{ width: '100%', maxWidth: '360px' }}>
-        <button className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: '14px' }}
+      {/* Top bar: back left, lang right */}
+      <div style={{ width: '100%', maxWidth: '360px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '13px' }}
           onClick={() => { haptic('light'); onBack(); }}>
           {t('lobby_back', lang)}
         </button>
+        <LanguageSwitcher lang={lang} onChange={onLangChange} />
       </div>
 
       {/* User card */}
