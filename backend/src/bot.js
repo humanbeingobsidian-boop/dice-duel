@@ -268,9 +268,44 @@ function startBot() {
     });
   });
 
-  // הפעל polling — לא חוסם את ה-event loop
+  bot.catch((err) => {
+    console.error('Bot error:', err.message || err);
+  });
+
+  // grammY זורק 409 כ-unhandled — נתפוס ברמת ה-process
+  process.on('uncaughtException', (err) => {
+    if (err?.error_code === 409 || err?.message?.includes('409')) {
+      console.warn('⚠️  Bot 409 conflict — waiting 15s for old instance to die...');
+      setTimeout(() => {
+        bot.start({
+          onStart: (info) => console.log(`🤖 Bot @${info.username} running (after retry)`),
+          drop_pending_updates: true,
+        }).catch((e) => console.error('Bot retry failed:', e.message));
+      }, 15000);
+    } else {
+      console.error('Uncaught exception:', err);
+    }
+  });
+
+  process.on('unhandledRejection', (err) => {
+    if (err?.error_code === 409 || err?.message?.includes('409')) {
+      console.warn('⚠️  Bot 409 conflict (unhandledRejection) — waiting 15s...');
+      setTimeout(() => {
+        bot.start({
+          onStart: (info) => console.log(`🤖 Bot @${info.username} running (after retry)`),
+          drop_pending_updates: true,
+        }).catch((e) => console.error('Bot retry failed:', e.message));
+      }, 15000);
+    } else {
+      console.error('Unhandled rejection:', err);
+    }
+  });
+
   bot.start({
     onStart: (info) => console.log(`🤖 Bot @${info.username} running`),
+    drop_pending_updates: true,
+  }).catch((err) => {
+    console.warn('Bot start error (will retry):', err.message);
   });
 }
 
