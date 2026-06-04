@@ -1,7 +1,7 @@
 // frontend/src/App.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './hooks/useSocket';
-import { getInitData, expandApp } from './utils/telegram';
+import { getInitData, expandApp, getReferralCode } from './utils/telegram';
 
 import SplashScreen from './screens/SplashScreen';
 import LobbyScreen from './screens/LobbyScreen';
@@ -63,9 +63,9 @@ export default function App() {
   useEffect(() => {
     if (!connected) return;
     const initData = getInitData();
-    // Read referral code from URL: ?ref=<telegram_id>
-    const urlParams = new URLSearchParams(window.location.search);
-    const referralCode = urlParams.get('ref') || null;
+    // Get referral from Telegram start_param or URL fallback
+    const referralCode = getReferralCode();
+    if (referralCode) console.log('🔗 Referral code detected:', referralCode);
     emit('authenticate', { initData, referralCode });
     setTimeout(() => emit('find_active_game'), 300);
   }, [connected, emit]);

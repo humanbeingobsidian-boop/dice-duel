@@ -68,6 +68,24 @@ export function getThemeParams() {
 }
 
 /**
+ * Get referral code — from Telegram start_param (deep link) or URL ?ref=
+ * Deep link: t.me/bot?start=ref123 → start_param = "ref123"
+ */
+export function getReferralCode() {
+  const tg = getTelegramWebApp();
+  // First try Telegram's start_param (from deep link)
+  const startParam = tg?.initDataUnsafe?.start_param;
+  if (startParam && startParam.startsWith('ref')) {
+    return startParam.replace('ref', '');
+  }
+  // Fallback: URL query param ?ref=
+  const urlParams = new URLSearchParams(window.location.search);
+  const refParam = urlParams.get('ref');
+  if (refParam) return refParam;
+  return null;
+}
+
+/**
  * Is this running inside Telegram?
  */
 export function isInsideTelegram() {
