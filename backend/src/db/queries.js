@@ -24,6 +24,8 @@ db.exec(`
     balance INTEGER NOT NULL DEFAULT 95,
     total_games INTEGER NOT NULL DEFAULT 0,
     total_wins INTEGER NOT NULL DEFAULT 0,
+    referred_by TEXT,          -- telegram_id of who invited them
+    referral_paid INTEGER NOT NULL DEFAULT 0, -- 1 once bonus was given
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -101,6 +103,34 @@ function upsertUser(params) {
   _insertUser.run(params);
   return getUserByTelegramId.get(params.telegram_id);
 }
+
+// Upsert with referral — sets referred_by only on first insert
+const _insertUserWithReferral = db.prepare(`
+  INSERT INTO users (telegram_id, username, first_name, referred_by)
+  VALUES (@telegram_id, @username, @first_name, @referred_by)
+  ON CONFLICT(telegram_id) DO UPDATE SET
+    username = excluded.username,
+    first_name = excluded.first_name,
+    updated_at = CURRENT_TIMESTAMP
+`);
+
+function upsertUserWithReferral(params) {
+  _insertUserWithReferral.run(params);
+  return getUserByTelegramId.get(params.telegram_id);
+}
+
+// Pay referral bonus to referrer — only once per new user
+const payReferralBonus = db.transaction((newUserId, referrerTelegramId) => {
+  const newUser = getUserById.get(newUserId);
+  // Only pay if not yet paid and referrer exists
+  if (!newUser || newUser.referral_paid) return null;
+  const referrer = getUserByTelegramId.get(referrerTelegramId);
+  if (!referrer) return null;
+  // Mark paid + credit referrer
+  db.prepare(`UPDATE users SET referral_paid = 1 WHERE id = ?`).run(newUserId);
+  addBalance.run(5, referrer.id);
+  return getUserByTelegramId.get(referrerTelegramId);
+});
 
 const getUserByTelegramId = db.prepare(`
   SELECT * FROM users WHERE telegram_id = ?
@@ -321,6 +351,8 @@ const buyPrizeTransaction = db.transaction((userId, telegramId, username, firstN
 module.exports = {
   db,
   upsertUser,
+  upsertUserWithReferral,
+  payReferralBonus,
   getUserByTelegramId,
   getUserById,
   deductBalance,

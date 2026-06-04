@@ -24,7 +24,7 @@ const SCREEN = {
 };
 
 export default function App() {
-  const { emit, on, off, connected } = useSocket();
+  const { emit, on, off, connected, socket } = useSocket();
 
   // App state
   const [screen, setScreen] = useState(SCREEN.SPLASH);
@@ -45,8 +45,9 @@ export default function App() {
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(10);
   const [disconnectedPlayer, setDisconnectedPlayer] = useState(null);
   const [myReconnectSeconds, setMyReconnectSeconds] = useState(null);
-  const [readyPlayers, setReadyPlayers] = useState([]); // userIds who are ready
-  const [selectedFee, setSelectedFee] = useState(5); // entry fee for next game
+  const [readyPlayers, setReadyPlayers] = useState([]);
+  const [selectedFee, setSelectedFee] = useState(5);
+  const [referralBonus, setReferralBonus] = useState(null); // { newUser, bonus }
 
   const handleLangChange = useCallback((code) => {
     setLang(code);
@@ -62,14 +63,26 @@ export default function App() {
   useEffect(() => {
     if (!connected) return;
     const initData = getInitData();
-    emit('authenticate', { initData });
-    // FIX #1: after auth, check if we have an active game to return to
+    // Read referral code from URL: ?ref=<telegram_id>
+    const urlParams = new URLSearchParams(window.location.search);
+    const referralCode = urlParams.get('ref') || null;
+    emit('authenticate', { initData, referralCode });
     setTimeout(() => emit('find_active_game'), 300);
   }, [connected, emit]);
 
   // ─── Socket event listeners ─────────────────────────────────────────────────
   useEffect(() => {
-    const offAuth = on('authenticated', ({ user }) => setUser(user));
+    const offAuth = on('authenticated', ({ user }) => {
+      setUser(user);
+      // Subscribe to personal referral bonus channel
+      if (user?.telegram_id) {
+        socket.on(`referral_bonus_${user.telegram_id}`, ({ newUser, bonus, newBalance }) => {
+          setUser(u => u ? { ...u, balance: newBalance } : u);
+          setReferralBonus({ newUser, bonus });
+          setTimeout(() => setReferralBonus(null), 4000);
+        });
+      }
+    });
     const offAuthErr = on('auth_error', ({ error }) => console.error('Auth error:', error));
 
     // FIX #1: auto-rejoin active game after reconnect
@@ -282,8 +295,25 @@ export default function App() {
   }, []);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  // Referral bonus toast — shown on any screen
+  const ReferralToast = referralBonus ? (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      background: 'linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.95))',
+      border: '1px solid var(--success2)', borderRadius: 'var(--radius)',
+      padding: '12px 20px', zIndex: 300, whiteSpace: 'nowrap',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+      animation: 'pop 0.3s ease',
+    }}>
+      <span style={{ fontWeight: 700, fontSize: '14px' }}>
+        🎁 +{referralBonus.bonus} קרדיטים! {referralBonus.newUser} הצטרף דרך הקישור שלך
+      </span>
+    </div>
+  ) : null;
+
   if (screen === SCREEN.SPLASH) {
-    return <SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} />;
+    return <>{ReferralToast}<SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} /></>;
   }
 
   if (screen === SCREEN.PRIZES) {

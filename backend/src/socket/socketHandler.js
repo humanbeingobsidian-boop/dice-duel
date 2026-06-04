@@ -1,6 +1,6 @@
 // backend/src/socket/socketHandler.js
 const { validateTelegramData } = require('../middleware/telegramAuth');
-const { upsertUser, getUserByTelegramId } = require('../db/queries');
+const { upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId } = require('../db/queries');
 const {
   joinGame, leaveWaitingRoom, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect, getRoomSnapshot,
@@ -12,7 +12,7 @@ module.exports = function setupSocket(io) {
     let authenticatedUser = null;
 
     // ─── Auth ──────────────────────────────────────────────────────────────
-    socket.on('authenticate', async ({ initData }) => {
+    socket.on('authenticate', async ({ initData, referralCode }) => {
       try {
         let telegramUser;
         if (process.env.DEV_MODE === 'true') {
@@ -23,11 +23,35 @@ module.exports = function setupSocket(io) {
           if (!telegramUser) return socket.emit('auth_error', { error: 'Invalid Telegram data' });
         }
 
-        const dbUser = upsertUser({
-          telegram_id: String(telegramUser.id),
-          username: telegramUser.username || null,
-          first_name: telegramUser.first_name || 'Player',
-        });
+        const isNewUser = !getUserByTelegramId.get(String(telegramUser.id));
+
+        // Upsert — with referral on first join
+        let dbUser;
+        if (isNewUser && referralCode && referralCode !== String(telegramUser.id)) {
+          dbUser = upsertUserWithReferral({
+            telegram_id: String(telegramUser.id),
+            username: telegramUser.username || null,
+            first_name: telegramUser.first_name || 'Player',
+            referred_by: referralCode,
+          });
+          // Pay referrer 5 credits
+          const referrer = payReferralBonus(dbUser.id, referralCode);
+          if (referrer) {
+            console.log(`🎁 Referral bonus: +5 credits to ${referrer.first_name} for inviting ${dbUser.first_name}`);
+            // Notify referrer if they're online (best-effort)
+            io.emit(`referral_bonus_${referralCode}`, {
+              newUser: dbUser.first_name,
+              bonus: 5,
+              newBalance: referrer.balance,
+            });
+          }
+        } else {
+          dbUser = upsertUser({
+            telegram_id: String(telegramUser.id),
+            username: telegramUser.username || null,
+            first_name: telegramUser.first_name || 'Player',
+          });
+        }
 
         authenticatedUser = { telegramUser, dbUser };
         socket.emit('authenticated', { user: dbUser });

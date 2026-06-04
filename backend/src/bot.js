@@ -23,19 +23,55 @@ function startBot() {
   // ─── /start ──────────────────────────────────────────────────────────────
   bot.command('start', async (ctx) => {
     const firstName = ctx.from?.first_name || 'שחקן';
+    const userId = String(ctx.from.id);
+
+    // Deep link referral: /start ref_<telegram_id>
+    const payload = ctx.match;
+    if (payload && payload.startsWith('ref_')) {
+      const referrerId = payload.replace('ref_', '');
+      if (referrerId !== userId) {
+        // Store referral in user's start — frontend will pick it up via startParam
+        console.log(`👥 Referral: ${userId} was invited by ${referrerId}`);
+      }
+    }
+
+    // Personal referral link for this user
+    const botUsername = ctx.me.username;
+    const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
+    const miniAppUrl = `${MINI_APP_URL}?ref=${userId}`;
+
     const keyboard = new InlineKeyboard()
-      .webApp('🎲 שחק עכשיו', MINI_APP_URL)
+      .webApp('🎲 שחק עכשיו', miniAppUrl)
       .row()
-      .text('⭐ קנה כוכבים', 'shop');
+      .text('⭐ קנה כוכבים', 'shop')
+      .row()
+      .text('👥 הזמן חבר (+5 קרדיטים)', `invite_${userId}`);
 
     await ctx.reply(
       `🎲 *שלום ${firstName}, ברוך הבא ל-Dice Duel!*\n\n` +
       `משחק קוביות מולטיפלייר בזמן אמת:\n` +
       `• 2-6 שחקנים בכל חדר\n` +
-      `• כניסה: 100 קרדיטים וירטואליים\n` +
+      `• כניסה: 5 או 100 קרדיטים\n` +
       `• הזוכה לוקח הכל! 🏆\n\n` +
+      `👥 *הזמן חברים וקבל +5 קרדיטים לכל חבר שמצטרף!*\n` +
       `_לחץ על הכפתור כדי להתחיל:_`,
       { parse_mode: 'Markdown', reply_markup: keyboard }
+    );
+  });
+
+  // ─── Invite button ────────────────────────────────────────────────────────
+  bot.callbackQuery(/^invite_(.+)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = ctx.match[1];
+    const botUsername = ctx.me.username;
+    const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
+
+    await ctx.reply(
+      `👥 *הקישור האישי שלך:*\n\n` +
+      `${referralLink}\n\n` +
+      `שתף את הקישור עם חברים.\n` +
+      `כשחבר נכנס דרך הקישור שלך — *אתה מקבל +5 קרדיטים* אוטומטית! 🎁`,
+      { parse_mode: 'Markdown' }
     );
   });
 

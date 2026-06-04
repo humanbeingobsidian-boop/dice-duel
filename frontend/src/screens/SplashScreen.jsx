@@ -16,7 +16,6 @@ export default function SplashScreen({ lang = 'en', onLangChange, onEnter }) {
     ['💀', t('splash_rule_elim', lang)],
     ['🏆', t('splash_rule_win', lang)],
   ];
-
   return (
     <div className="screen" style={{
       background: 'radial-gradient(ellipse at 50% 30%, #1a0a3a 0%, var(--bg) 70%)',
