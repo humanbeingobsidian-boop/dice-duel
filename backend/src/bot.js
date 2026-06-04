@@ -36,7 +36,7 @@ function startBot() {
     }
 
     // Personal referral link for this user
-    const botUsername = ctx.me.username;
+    const botUsername = process.env.BOT_USERNAME || ctx.me.username;
     const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
     const miniAppUrl = `${MINI_APP_URL}?ref=${userId}`;
 
@@ -63,7 +63,7 @@ function startBot() {
   bot.callbackQuery(/^invite_(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.match[1];
-    const botUsername = ctx.me.username;
+    const botUsername = process.env.BOT_USERNAME || ctx.me.username;
     const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
 
     await ctx.reply(
