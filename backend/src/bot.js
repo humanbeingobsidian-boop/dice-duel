@@ -1,5 +1,4 @@
 // backend/src/bot.js
-// הבוט רץ בתוך אותו process כמו הבאקנד
 const { Bot, InlineKeyboard } = require('grammy');
 
 const STAR_PACKAGES = [
@@ -12,33 +11,40 @@ const STAR_PACKAGES = [
 function startBot() {
   const BOT_TOKEN = process.env.BOT_TOKEN;
   const MINI_APP_URL = process.env.MINI_APP_URL || 'https://your-game.vercel.app';
-  const BOT_NAME = process.env.BOT_NAME;
 
   if (!BOT_TOKEN) {
-    console.warn('⚠️  BOT_TOKEN not set — bot will not start');
+    console.warn('⚠️ BOT_TOKEN not set — bot will not start');
     return;
   }
 
   const bot = new Bot(BOT_TOKEN);
 
-  // ─── /start ──────────────────────────────────────────────────────────────
+  function getBotUsername(ctx) {
+    return String(
+      process.env.BOT_NAME ||
+      process.env.BOT_USERNAME ||
+      ctx.me.username
+    ).trim().replace(/^@/, '');
+  }
+
+  function buildReferralLink(ctx, userId) {
+    const botUsername = getBotUsername(ctx);
+    // בלי underscore כדי לא לשבור Markdown
+    return `https://t.me/${botUsername}?start=ref${userId}`;
+  }
+
   bot.command('start', async (ctx) => {
     const firstName = ctx.from?.first_name || 'שחקן';
     const userId = String(ctx.from.id);
 
-    // Deep link referral: /start ref_<telegram_id>
     const payload = ctx.match;
-    if (payload && payload.startsWith('ref_')) {
-      const referrerId = payload.replace('ref_', '');
-      if (referrerId !== userId) {
-        // Store referral in user's start — frontend will pick it up via startParam
+    if (payload && payload.startsWith('ref')) {
+      const referrerId = payload.replace('ref', '');
+      if (referrerId && referrerId !== userId) {
         console.log(`👥 Referral: ${userId} was invited by ${referrerId}`);
       }
     }
 
-    // Personal referral link for this user
-    //const botUsername = (process.env.BOT_USERNAME || ctx.me.username);
-    const referralLink = `https://t.me/${BOT_NAME}?start=ref_${userId}`;
     const miniAppUrl = `${MINI_APP_URL}?ref=${userId}`;
 
     const keyboard = new InlineKeyboard()
@@ -49,65 +55,60 @@ function startBot() {
       .text('👥 הזמן חבר (+5 קרדיטים)', `invite_${userId}`);
 
     await ctx.reply(
-      `🎲 *שלום ${firstName}, ברוך הבא ל-Dice Duel!*\n\n` +
+      `🎲 שלום ${firstName}, ברוך הבא ל-Dice Duel!\n\n` +
       `משחק קוביות מולטיפלייר בזמן אמת:\n` +
       `• 2-6 שחקנים בכל חדר\n` +
       `• כניסה: 5 או 100 קרדיטים\n` +
       `• הזוכה לוקח הכל! 🏆\n\n` +
-      `🔗 *הזמן חברים וקבל +5 קרדיטים לכל חבר שמצטרף!*\n` +
-      `_לחץ על הכפתור כדי להתחיל:_`,
-      { parse_mode: 'Markdown', reply_markup: keyboard }
+      `🔗 הזמן חברים וקבל +5 קרדיטים לכל חבר שמצטרף!\n` +
+      `לחץ על הכפתור כדי להתחיל:`,
+      { reply_markup: keyboard }
     );
   });
 
-  // ─── Invite button ────────────────────────────────────────────────────────
   bot.callbackQuery(/^invite_(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
+
     const userId = ctx.match[1];
-    //const botUsername = (process.env.BOT_USERNAME || ctx.me.username);
-    const referralLink = `https://t.me/${BOT_NAME}?start=ref_${userId}`;
+    const referralLink = buildReferralLink(ctx, userId);
 
     await ctx.reply(
-      `🔗 *הקישור האישי שלך:*\n\n` +
+      `🔗 הקישור האישי שלך:\n\n` +
       `${referralLink}\n\n` +
       `שתף את הקישור עם חברים.\n` +
-      `כשחבר נכנס דרך הקישור שלך — *אתה מקבל +5 קרדיטים* אוטומטית! 🎁`,
-      { parse_mode: 'Markdown' }
+      `כשחבר נכנס דרך הקישור שלך — אתה מקבל +5 קרדיטים אוטומטית! 🎁`
     );
   });
 
-  // ─── /help ───────────────────────────────────────────────────────────────
   bot.command('help', async (ctx) => {
     await ctx.reply(
-      `🎲 *Dice Duel - עזרה*\n\n` +
-      `*פקודות:*\n` +
+      `🎲 Dice Duel - עזרה\n\n` +
+      `פקודות:\n` +
       `/start — מסך פתיחה\n` +
       `/shop — חנות כוכבים\n` +
       `/play — פתח את המשחק\n\n` +
-      `*איך משחקים:*\n` +
+      `איך משחקים:\n` +
       `1️⃣ לחץ "שחק עכשיו"\n` +
-      `2️⃣ שלם 100 קרדיטים לכניסה\n` +
+      `2️⃣ שלם קרדיטים לכניסה\n` +
       `3️⃣ המתן לשחקנים (2-6)\n` +
       `4️⃣ זרוק קובייה בתורך\n` +
       `5️⃣ יצא 1? הודחת!\n` +
       `6️⃣ השורד זוכה בכל הקופה 🏆\n\n` +
-      `*טיימרים:*\n` +
+      `טיימרים:\n` +
       `⏱️ 10 שניות לזריקת קובייה\n` +
       `⏳ 60 שניות לפתיחת משחק\n` +
-      `🔄 30 שניות לחזרה אחרי ניתוק`,
-      { parse_mode: 'Markdown' }
+      `🔄 30 שניות לחזרה אחרי ניתוק`
     );
   });
 
-  // ─── /play ───────────────────────────────────────────────────────────────
   bot.command('play', async (ctx) => {
     await ctx.reply('מוכן? 🎯', {
       reply_markup: new InlineKeyboard().webApp('🎲 פתח את המשחק', MINI_APP_URL),
     });
   });
 
-  // ─── /shop ───────────────────────────────────────────────────────────────
   bot.command('shop', async (ctx) => await showShop(ctx));
+
   bot.callbackQuery('shop', async (ctx) => {
     await ctx.answerCallbackQuery();
     await showShop(ctx);
@@ -115,30 +116,38 @@ function startBot() {
 
   async function showShop(ctx) {
     const keyboard = new InlineKeyboard();
+
     for (const pkg of STAR_PACKAGES) {
       keyboard.text(`${pkg.label} — ${pkg.credits} קרדיטים`, `buy_${pkg.id}`).row();
     }
+
     keyboard.text('🎲 חזור למשחק', 'back_to_game');
 
     await ctx.reply(
-      `⭐ *חנות כוכבים*\n\n` +
+      `⭐ חנות כוכבים\n\n` +
       `קנה כוכבי Telegram וקבל קרדיטים לשחק!\n\n` +
-      `📦 *חבילות זמינות:*\n` +
-      STAR_PACKAGES.map(p => `• ${p.label} → *${p.credits} קרדיטים* — ${p.description}`).join('\n') +
-      `\n\n_כל הקרדיטים הם וירטואליים_`,
-      { parse_mode: 'Markdown', reply_markup: keyboard }
+      `📦 חבילות זמינות:\n` +
+      STAR_PACKAGES.map(
+        (p) => `• ${p.label} → ${p.credits} קרדיטים — ${p.description}`
+      ).join('\n') +
+      `\n\nכל הקרדיטים הם וירטואליים`,
+      { reply_markup: keyboard }
     );
   }
 
-  // ─── Buy buttons ──────────────────────────────────────────────────────────
   for (const pkg of STAR_PACKAGES) {
     bot.callbackQuery(`buy_${pkg.id}`, async (ctx) => {
       await ctx.answerCallbackQuery();
+
       try {
         await ctx.replyWithInvoice(
           `${pkg.label} — Dice Duel`,
           pkg.description,
-          JSON.stringify({ pkg_id: pkg.id, credits: pkg.credits, user_id: ctx.from.id }),
+          JSON.stringify({
+            pkg_id: pkg.id,
+            credits: pkg.credits,
+            user_id: ctx.from.id,
+          }),
           'XTR',
           [{ label: pkg.label, amount: pkg.stars }]
         );
@@ -151,24 +160,28 @@ function startBot() {
 
   bot.callbackQuery('back_to_game', async (ctx) => {
     await ctx.answerCallbackQuery();
+
     await ctx.reply('בוא נשחק! 🎲', {
       reply_markup: new InlineKeyboard().webApp('🎲 שחק עכשיו', MINI_APP_URL),
     });
   });
 
-  // ─── Pre-checkout ─────────────────────────────────────────────────────────
   bot.on('pre_checkout_query', async (ctx) => {
     try {
       const payload = JSON.parse(ctx.preCheckoutQuery.invoice_payload);
-      const valid = STAR_PACKAGES.find(p => p.id === payload.pkg_id);
-      if (!valid) return ctx.answerPreCheckoutQuery(false, 'חבילה לא תקינה');
+      const valid = STAR_PACKAGES.find((p) => p.id === payload.pkg_id);
+
+      if (!valid) {
+        return ctx.answerPreCheckoutQuery(false, 'חבילה לא תקינה');
+      }
+
       await ctx.answerPreCheckoutQuery(true);
-    } catch {
+    } catch (err) {
+      console.error('Pre-checkout error:', err);
       await ctx.answerPreCheckoutQuery(false, 'שגיאה בעיבוד');
     }
   });
 
-  // ─── Successful payment → credit directly via DB ──────────────────────────
   bot.on('message:successful_payment', async (ctx) => {
     const payment = ctx.message.successful_payment;
     const payload = JSON.parse(payment.invoice_payload);
@@ -179,26 +192,28 @@ function startBot() {
     console.log(`💰 Payment: user ${telegramId} paid ${stars} stars → +${credits} credits`);
 
     try {
-      // Direct DB access — same process, no HTTP needed
       const { getUserByTelegramId, addBalance } = require('./db/queries');
+
       const user = getUserByTelegramId.get(telegramId);
       if (!user) throw new Error('User not found');
+
       addBalance.run(credits, user.id);
+
       const updated = getUserByTelegramId.get(telegramId);
 
       await ctx.reply(
-        `✅ *תשלום התקבל!*\n\n` +
+        `✅ תשלום התקבל!\n\n` +
         `שולמו: ${stars} ⭐\n` +
-        `קרדיטים שנוספו: *${credits}*\n` +
-        `יתרה חדשה: *${updated.balance}* קרדיטים\n\n` +
-        `_חזור למשחק וצא לשחק!_ 🎲`,
+        `קרדיטים שנוספו: ${credits}\n` +
+        `יתרה חדשה: ${updated.balance} קרדיטים\n\n` +
+        `חזור למשחק וצא לשחק! 🎲`,
         {
-          parse_mode: 'Markdown',
           reply_markup: new InlineKeyboard().webApp('🎲 שחק עכשיו', MINI_APP_URL),
         }
       );
     } catch (err) {
       console.error('Credit error:', err);
+
       await ctx.reply(
         `⚠️ התשלום התקבל אך הייתה שגיאה.\n` +
         `פנה לתמיכה: ${payment.telegram_payment_charge_id}`
@@ -206,33 +221,42 @@ function startBot() {
     }
   });
 
-  bot.catch((err) => console.error('Bot error:', err));
-
-  // ─── Admin: /sent_<orderId> ───────────────────────────────────────────────
   bot.command('sent', async (ctx) => {
     const adminId = process.env.ADMIN_TELEGRAM_ID;
+
     if (String(ctx.from.id) !== String(adminId)) return;
 
     const parts = ctx.message.text.split('_');
     const orderId = parts[1];
-    if (!orderId) return ctx.reply('שימוש: /sent_<orderId>');
+
+    if (!orderId) {
+      return ctx.reply('שימוש: /sent_<orderId>');
+    }
 
     try {
       const { markOrderSent, db } = require('./db/queries');
+
       const order = db.prepare('SELECT * FROM prize_orders WHERE id = ?').get(orderId);
-      if (!order) return ctx.reply(`❌ הזמנה ${orderId} לא נמצאה`);
-      if (order.status === 'sent') return ctx.reply(`✅ הזמנה ${orderId} כבר סומנה כנשלחה`);
 
-      markOrderSent.run({ id: orderId, note: 'נשלח על ידי אדמין דרך בוט' });
+      if (!order) {
+        return ctx.reply(`❌ הזמנה ${orderId} לא נמצאה`);
+      }
 
-      // Notify the user their prize is on the way
+      if (order.status === 'sent') {
+        return ctx.reply(`✅ הזמנה ${orderId} כבר סומנה כנשלחה`);
+      }
+
+      markOrderSent.run({
+        id: orderId,
+        note: 'נשלח על ידי אדמין דרך בוט',
+      });
+
       try {
         await bot.api.sendMessage(
           order.telegram_id,
-          `🎁 *הפרס שלך נשלח!*\n\n` +
+          `🎁 הפרס שלך נשלח!\n\n` +
           `${order.prize_label}\n\n` +
-          `אם לא קיבלת תוך 10 דקות, פנה לתמיכה.`,
-          { parse_mode: 'Markdown' }
+          `אם לא קיבלת תוך 10 דקות, פנה לתמיכה.`
         );
       } catch (e) {
         console.error('Could not notify user:', e.message);
@@ -245,37 +269,43 @@ function startBot() {
     }
   });
 
-  // ─── Admin: /orders — list pending ───────────────────────────────────────
   bot.command('orders', async (ctx) => {
     const adminId = process.env.ADMIN_TELEGRAM_ID;
+
     if (String(ctx.from.id) !== String(adminId)) return;
 
-    const { getPendingOrders } = require('./db/queries');
-    const orders = getPendingOrders.all();
+    try {
+      const { getPendingOrders } = require('./db/queries');
+      const orders = getPendingOrders.all();
 
-    if (orders.length === 0) {
-      return ctx.reply('✅ אין הזמנות ממתינות');
+      if (orders.length === 0) {
+        return ctx.reply('✅ אין הזמנות ממתינות');
+      }
+
+      const text = orders.map((o) =>
+        `🆔 ${o.id} | ${o.first_name} (@${o.username || o.telegram_id})\n` +
+        `🎁 ${o.prize_label}\n` +
+        `📅 ${new Date(o.created_at).toLocaleString('he-IL')}\n` +
+        `/sent_${o.id}`
+      ).join('\n\n');
+
+      await ctx.reply(`📋 הזמנות ממתינות (${orders.length}):\n\n${text}`);
+    } catch (err) {
+      console.error('Orders error:', err);
+      await ctx.reply('שגיאה בשליפת הזמנות');
     }
-
-    const text = orders.map(o =>
-      `🆔 ${o.id} | ${o.first_name} (@${o.username || o.telegram_id})\n` +
-      `🎁 ${o.prize_label}\n` +
-      `📅 ${new Date(o.created_at).toLocaleString('he-IL')}\n` +
-      `/sent_${o.id}`
-    ).join('\n\n');
-
-    await ctx.reply(`📋 *הזמנות ממתינות (${orders.length}):*\n\n${text}`, {
-      parse_mode: 'Markdown',
-    });
   });
 
+  bot.catch((err) => {
+    console.error('Bot error:', err.message || err);
+  });
 
-bot.start({
-  onStart: (info) => console.log(`🤖 Bot @${info.username} running`),
-  drop_pending_updates: true,
-}).catch((err) => {
-  console.error('Bot start error:', err.message);
-});
+  bot.start({
+    onStart: (info) => console.log(`🤖 Bot @${info.username} running`),
+    drop_pending_updates: true,
+  }).catch((err) => {
+    console.error('Bot start error:', err.message);
+  });
 }
 
 module.exports = { startBot };
