@@ -12,6 +12,7 @@ const STAR_PACKAGES = [
 function startBot() {
   const BOT_TOKEN = process.env.BOT_TOKEN;
   const MINI_APP_URL = process.env.MINI_APP_URL || 'https://your-game.vercel.app';
+  const BOT_NAME = process.env.BOT_NAME;
 
   if (!BOT_TOKEN) {
     console.warn('⚠️  BOT_TOKEN not set — bot will not start');
@@ -36,8 +37,8 @@ function startBot() {
     }
 
     // Personal referral link for this user
-    const botUsername = (process.env.BOT_USERNAME || ctx.me.username).trim();
-    const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
+    //const botUsername = (process.env.BOT_USERNAME || ctx.me.username);
+    const referralLink = `https://t.me/${BOT_NAME}?start=ref_${userId}`;
     const miniAppUrl = `${MINI_APP_URL}?ref=${userId}`;
 
     const keyboard = new InlineKeyboard()
@@ -63,8 +64,8 @@ function startBot() {
   bot.callbackQuery(/^invite_(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.match[1];
-    const botUsername = (process.env.BOT_USERNAME || ctx.me.username).trim();
-    const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
+    //const botUsername = (process.env.BOT_USERNAME || ctx.me.username);
+    const referralLink = `https://t.me/${BOT_NAME}?start=ref_${userId}`;
 
     await ctx.reply(
       `🔗 *הקישור האישי שלך:*\n\n` +
