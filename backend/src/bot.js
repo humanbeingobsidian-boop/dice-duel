@@ -36,7 +36,7 @@ function startBot() {
     }
 
     // Personal referral link for this user
-    const botUsername = process.env.BOT_USERNAME || ctx.me.username;
+    const botUsername = (process.env.BOT_USERNAME || ctx.me.username).trim();
     const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
     const miniAppUrl = `${MINI_APP_URL}?ref=${userId}`;
 
@@ -63,11 +63,11 @@ function startBot() {
   bot.callbackQuery(/^invite_(.+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.match[1];
-    const botUsername = process.env.BOT_USERNAME || ctx.me.username;
+    const botUsername = (process.env.BOT_USERNAME || ctx.me.username).trim();
     const referralLink = `https://t.me/${botUsername}?start=ref_${userId}`;
 
     await ctx.reply(
-      `👥 *הקישור האישי שלך:*\n\n` +
+      `🔗 *הקישור האישי שלך:*\n\n` +
       `${referralLink}\n\n` +
       `שתף את הקישור עם חברים.\n` +
       `כשחבר נכנס דרך הקישור שלך — *אתה מקבל +5 קרדיטים* אוטומטית! 🎁`,
@@ -268,45 +268,13 @@ function startBot() {
     });
   });
 
-  bot.catch((err) => {
-    console.error('Bot error:', err.message || err);
-  });
 
-  // grammY זורק 409 כ-unhandled — נתפוס ברמת ה-process
-  process.on('uncaughtException', (err) => {
-    if (err?.error_code === 409 || err?.message?.includes('409')) {
-      console.warn('⚠️  Bot 409 conflict — waiting 15s for old instance to die...');
-      setTimeout(() => {
-        bot.start({
-          onStart: (info) => console.log(`🤖 Bot @${info.username} running (after retry)`),
-          drop_pending_updates: true,
-        }).catch((e) => console.error('Bot retry failed:', e.message));
-      }, 15000);
-    } else {
-      console.error('Uncaught exception:', err);
-    }
-  });
-
-  process.on('unhandledRejection', (err) => {
-    if (err?.error_code === 409 || err?.message?.includes('409')) {
-      console.warn('⚠️  Bot 409 conflict (unhandledRejection) — waiting 15s...');
-      setTimeout(() => {
-        bot.start({
-          onStart: (info) => console.log(`🤖 Bot @${info.username} running (after retry)`),
-          drop_pending_updates: true,
-        }).catch((e) => console.error('Bot retry failed:', e.message));
-      }, 15000);
-    } else {
-      console.error('Unhandled rejection:', err);
-    }
-  });
-
-  bot.start({
-    onStart: (info) => console.log(`🤖 Bot @${info.username} running`),
-    drop_pending_updates: true,
-  }).catch((err) => {
-    console.warn('Bot start error (will retry):', err.message);
-  });
+bot.start({
+  onStart: (info) => console.log(`🤖 Bot @${info.username} running`),
+  drop_pending_updates: true,
+}).catch((err) => {
+  console.error('Bot start error:', err.message);
+});
 }
 
 module.exports = { startBot };
