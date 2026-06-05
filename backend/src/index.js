@@ -5,7 +5,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-const apiRoutes = require('./routes/api');
+const createApiRouter = require('./routes/api');
 const setupSocket = require('./socket/socketHandler');
 const { startBot } = require('./bot');
 
@@ -29,8 +29,8 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api', apiRoutes);
+// ─── Routes (pass io so invite endpoint can emit socket events) ───────────────
+app.use('/api', createApiRouter(io));
 
 app.get('/health', (req, res) => {
   res.json({
@@ -49,7 +49,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Dice Duel backend running on port ${PORT}`);
   console.log(`   Dev mode: ${process.env.DEV_MODE === 'true' ? '✅ ON' : '❌ OFF'}`);
   console.log(`   Frontend: ${FRONTEND_URL}`);
-
-  // הבוט רץ באותו process — לא צריך שירות נפרד
   startBot();
 });

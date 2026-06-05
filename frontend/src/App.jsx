@@ -11,6 +11,7 @@ import ResultScreen from './screens/ResultScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import ReconnectScreen from './screens/ReconnectScreen';
 import PrizesScreen from './screens/PrizesScreen';
+import InviteScreen from './screens/InviteScreen';
 
 // Screens
 const SCREEN = {
@@ -21,6 +22,7 @@ const SCREEN = {
   RESULT: 'result',
   LEADERBOARD: 'leaderboard',
   PRIZES: 'prizes',
+  INVITE: 'invite',
 };
 
 export default function App() {
@@ -74,11 +76,11 @@ export default function App() {
   useEffect(() => {
     const offAuth = on('authenticated', ({ user }) => {
       setUser(user);
-      // Subscribe to personal referral bonus channel
+      // Listen for invite bonus notifications
       if (user?.telegram_id) {
-        socket.on(`referral_bonus_${user.telegram_id}`, ({ newUser, bonus, newBalance }) => {
-          setUser(u => u ? { ...u, balance: newBalance } : u);
-          setReferralBonus({ newUser, bonus });
+        socket?.on(`invite_bonus_${user.telegram_id}`, ({ redeemerName, bonus }) => {
+          setUser(u => u ? { ...u, balance: (u.balance ?? 0) + bonus } : u);
+          setReferralBonus({ newUser: redeemerName, bonus });
           setTimeout(() => setReferralBonus(null), 4000);
         });
       }
@@ -316,6 +318,17 @@ export default function App() {
     return <>{ReferralToast}<SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} /></>;
   }
 
+  if (screen === SCREEN.INVITE) {
+    return (
+      <InviteScreen
+        lang={lang}
+        user={user}
+        onBack={() => setScreen(SCREEN.LOBBY)}
+        onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)}
+      />
+    );
+  }
+
   if (screen === SCREEN.PRIZES) {
     return (
       <PrizesScreen
@@ -345,6 +358,7 @@ export default function App() {
         onJoin={handleJoinGame}
         onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)}
         onPrizes={() => setScreen(SCREEN.PRIZES)}
+        onInvite={() => setScreen(SCREEN.INVITE)}
         onBack={() => setScreen(SCREEN.SPLASH)}
         loading={joining}
         error={joinError}

@@ -137,6 +137,7 @@ function startBot() {
       .text(l.shop_btn, 'shop')
       .row()
       .text(l.invite_btn, `invite_${userId}`)
+      .text('🔑 הקוד שלי', 'mycode_btn')
       .row()
       .text(l.lang_btn, 'choose_lang');
 
@@ -187,8 +188,58 @@ function startBot() {
     await ctx.reply(l.invite_msg(link));
   });
 
-  // ─── /help ────────────────────────────────────────────────────────────────
-  bot.command('help', async (ctx) => {
+  bot.callbackQuery('mycode_btn', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const userId = String(ctx.from.id);
+    try {
+      const { getUserByTelegramId, upsertUser, ensureInviteCode } = require('./db/queries');
+      let user = getUserByTelegramId.get(userId);
+      if (!user) {
+        user = upsertUser({
+          telegram_id: userId,
+          username: ctx.from.username || null,
+          first_name: ctx.from.first_name || 'Player',
+        });
+      }
+      const code = ensureInviteCode(user);
+      const msgs = {
+        he: `🔑 הקוד האישי שלך: *${code}*\n\nשתף עם חברים וקבל +5 קרדיטים לכל חבר שמצטרף! 🎁`,
+        en: `🔑 Your code: *${code}*\n\nShare with friends and get +5 credits for each who joins! 🎁`,
+        ru: `🔑 Твой код: *${code}*\n\nПоделись с друзьями и получи +5 кредитов за каждого! 🎁`,
+      };
+      await ctx.reply(msgs[getLang(userId)] || msgs.he, { parse_mode: 'Markdown' });
+    } catch (err) {
+      await ctx.reply('שגיאה');
+    }
+  });
+  bot.command('mycode', async (ctx) => {
+    const userId = String(ctx.from.id);
+    const l = L(userId);
+    try {
+      const { getUserByTelegramId, upsertUser, ensureInviteCode } = require('./db/queries');
+      let user = getUserByTelegramId.get(userId);
+      if (!user) {
+        user = upsertUser({
+          telegram_id: userId,
+          username: ctx.from.username || null,
+          first_name: ctx.from.first_name || 'Player',
+        });
+      }
+      const code = ensureInviteCode(user);
+      const msgs = {
+        he: `👥 הקוד האישי שלך:\n\n🔑 *${code}*\n\nשתף עם חברים — כשהם מזינים את הקוד במשחק, שניכם מקבלים +5 קרדיטים! 🎁`,
+        en: `👥 Your personal invite code:\n\n🔑 *${code}*\n\nShare with friends — when they enter it in the game, you both get +5 credits! 🎁`,
+        ru: `👥 Твой личный код приглашения:\n\n🔑 *${code}*\n\nПоделись с друзьями — когда они введут его в игре, вы оба получите +5 кредитов! 🎁`,
+      };
+      await ctx.reply(msgs[getLang(userId)] || msgs.he, {
+        parse_mode: 'Markdown',
+        reply_markup: new InlineKeyboard().webApp(l.play_btn, MINI_APP_URL),
+      });
+    } catch (err) {
+      console.error('mycode error:', err);
+      await ctx.reply('שגיאה בשליפת הקוד');
+    }
+  });
     await ctx.reply(L(ctx.from.id).help);
   });
 

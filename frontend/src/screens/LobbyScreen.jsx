@@ -5,7 +5,7 @@ import { t } from '../utils/i18n';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 export default function LobbyScreen({
-  lang = 'en', onLangChange, user, onJoin, onLeaderboard, onPrizes, onBack,
+  lang = 'en', onLangChange, user, onJoin, onLeaderboard, onPrizes, onInvite, onBack,
   loading, error, selectedFee = 5, onFeeChange,
 }) {
   const tables = [
@@ -171,6 +171,13 @@ export default function LobbyScreen({
           {t('lobby_prizes', lang)}
         </button>
       </div>
+      <button
+        className="btn btn-ghost btn-full"
+        style={{ maxWidth: '360px', width: '100%', color: 'var(--success2)', border: '1px solid rgba(16,185,129,0.3)' }}
+        onClick={() => { haptic('light'); onInvite(); }}
+      >
+        👥 {lang === 'he' ? 'הזמן חבר • +5 קרדיטים' : lang === 'ru' ? 'Пригласить друга • +5 кредитов' : 'Invite Friend • +5 Credits'}
+      </button>
     </div>
   );
 }

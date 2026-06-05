@@ -24,8 +24,9 @@ db.exec(`
     balance INTEGER NOT NULL DEFAULT 95,
     total_games INTEGER NOT NULL DEFAULT 0,
     total_wins INTEGER NOT NULL DEFAULT 0,
-    referred_by TEXT,          -- telegram_id of who invited them
-    referral_paid INTEGER NOT NULL DEFAULT 0, -- 1 once bonus was given
+    invite_code TEXT UNIQUE,       -- personal invite code (e.g. SMOKEY42)
+    referred_by TEXT,              -- telegram_id of who invited them
+    referral_paid INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -348,6 +349,68 @@ const buyPrizeTransaction = db.transaction((userId, telegramId, username, firstN
   return order;
 });
 
+// ─── Invite code queries ──────────────────────────────────────────────────────
+const getUserByInviteCode = db.prepare(`
+  SELECT * FROM users WHERE invite_code = ?
+`);
+
+const setInviteCode = db.prepare(`
+  UPDATE users SET invite_code = ? WHERE id = ?
+`);
+
+// Generate a unique invite code from first_name + random digits
+function generateInviteCode(firstName) {
+  const base = (firstName || 'PLAYER')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6) || 'PLAYER';
+  const suffix = Math.floor(10 + Math.random() * 90); // 2-digit number
+  return `${base}${suffix}`;
+}
+
+function ensureInviteCode(user) {
+  if (user.invite_code) return user.invite_code;
+  let code;
+  let attempts = 0;
+  do {
+    code = generateInviteCode(user.first_name);
+    attempts++;
+  } while (getUserByInviteCode.get(code) && attempts < 20);
+  setInviteCode.run(code, user.id);
+  return code;
+}
+
+// Redeem an invite code — both users get +5 credits
+// Returns { success, error, inviterName }
+const INVITE_BONUS = 5;
+
+const redeemInviteCode = db.transaction((redeemerUserId, code) => {
+  const redeemer = getUserById.get(redeemerUserId);
+  if (!redeemer) return { success: false, error: 'USER_NOT_FOUND' };
+  if (redeemer.referral_paid) return { success: false, error: 'ALREADY_USED' };
+  if (redeemer.invite_code === code) return { success: false, error: 'OWN_CODE' };
+
+  const inviter = getUserByInviteCode.get(code);
+  if (!inviter) return { success: false, error: 'INVALID_CODE' };
+  if (inviter.id === redeemerUserId) return { success: false, error: 'OWN_CODE' };
+
+  // Pay both
+  addBalance.run(INVITE_BONUS, redeemerUserId);
+  addBalance.run(INVITE_BONUS, inviter.id);
+
+  // Mark redeemer so they can't use another code
+  db.prepare(`UPDATE users SET referral_paid = 1, referred_by = ? WHERE id = ?`)
+    .run(inviter.telegram_id, redeemerUserId);
+
+  return {
+    success: true,
+    inviterName: inviter.first_name,
+    inviterId: inviter.id,
+    inviterTelegramId: inviter.telegram_id,
+    bonus: INVITE_BONUS,
+  };
+});
+
 module.exports = {
   db,
   upsertUser,
@@ -355,6 +418,9 @@ module.exports = {
   payReferralBonus,
   getUserByTelegramId,
   getUserById,
+  getUserByInviteCode,
+  ensureInviteCode,
+  redeemInviteCode,
   deductBalance,
   addBalance,
   getLeaderboard,

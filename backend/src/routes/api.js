@@ -1,6 +1,5 @@
 // backend/src/routes/api.js
 const express = require('express');
-const router = express.Router();
 const { requireTelegramAuth } = require('../middleware/telegramAuth');
 const {
   upsertUser,
@@ -12,7 +11,12 @@ const {
   getPendingOrders,
   markOrderSent,
   buyPrizeTransaction,
+  ensureInviteCode,
+  redeemInviteCode,
 } = require('../db/queries');
+
+module.exports = function createRouter(io) {
+  const router = express.Router();
 
 // ─── Prize catalog ────────────────────────────────────────────────────────────
 const PRIZES = [
@@ -212,9 +216,77 @@ async function notifyAdmin(order, dbUser, prize) {
   });
 }
 
+// ─── Invite Code ──────────────────────────────────────────────────────────────
+
 /**
- * POST /api/credits/add
- * Called by the bot after successful Stars payment.
+ * GET /api/invite-code
+ * Returns the current user's invite code (generates one if needed).
+ */
+router.get('/invite-code', requireTelegramAuth, (req, res) => {
+  try {
+    const user = getUserByTelegramId.get(String(req.telegramUser.id));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const code = ensureInviteCode(user);
+    res.json({ code, bonus: 5 });
+  } catch (err) {
+    console.error('Get invite code error:', err);
+    res.status(500).json({ error: 'Failed to get invite code' });
+  }
+});
+
+/**
+ * POST /api/invite-code/redeem
+ * Body: { code: "SMOKEY42" }
+ * Gives +5 credits to both the redeemer and the inviter.
+ */
+router.post('/invite-code/redeem', requireTelegramAuth, (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ error: 'INVALID_CODE' });
+    }
+    const user = getUserByTelegramId.get(String(req.telegramUser.id));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const result = redeemInviteCode(user.id, code.trim().toUpperCase());
+
+    if (!result.success) {
+      const msgs = {
+        ALREADY_USED: 'כבר השתמשת בקוד הזמנה',
+        OWN_CODE:     'לא ניתן להשתמש בקוד שלך',
+        INVALID_CODE: 'קוד לא קיים',
+        USER_NOT_FOUND: 'משתמש לא נמצא',
+      };
+      return res.status(400).json({ error: result.error, message: msgs[result.error] || result.error });
+    }
+
+    const updatedUser = getUserByTelegramId.get(String(req.telegramUser.id));
+
+    console.log(`🎁 Invite redeemed: ${user.first_name} used code of ${result.inviterName} → both +${result.bonus}`);
+
+    // Notify inviter via socket if they're online
+    if (io && result.inviterTelegramId) {
+      io.emit(`invite_bonus_${result.inviterTelegramId}`, {
+        redeemerName: user.first_name,
+        bonus: result.bonus,
+      });
+    }
+
+    res.json({
+      success: true,
+      inviterName: result.inviterName,
+      bonus: result.bonus,
+      balance: updatedUser.balance,
+      inviterTelegramId: result.inviterTelegramId,
+    });
+  } catch (err) {
+    console.error('Redeem invite error:', err);
+    res.status(500).json({ error: 'Failed to redeem code' });
+  }
+});
+
+/**
+ * POST /api/credits/add — bot Stars payment webhook
  */
 router.post('/credits/add', (req, res) => {
   const secret = req.headers['x-bot-secret'];
@@ -239,4 +311,5 @@ router.post('/credits/add', (req, res) => {
   }
 });
 
-module.exports = router;
+  return router;
+};
