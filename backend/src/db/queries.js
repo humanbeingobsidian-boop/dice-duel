@@ -359,13 +359,13 @@ const setInviteCode = db.prepare(`
 `);
 
 // Generate a unique invite code from first_name + random digits
-function generateInviteCode(firstName) {
-  const base = (firstName || 'PLAYER')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 6) || 'PLAYER';
-  const suffix = Math.floor(10 + Math.random() * 90); // 2-digit number
-  return `${base}${suffix}`;
+function generateInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusable chars (0,O,1,I)
+  let code = '';
+  for (let i = 0; i < 7; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
 }
 
 function ensureInviteCode(user) {
@@ -373,9 +373,9 @@ function ensureInviteCode(user) {
   let code;
   let attempts = 0;
   do {
-    code = generateInviteCode(user.first_name);
+    code = generateInviteCode();
     attempts++;
-  } while (getUserByInviteCode.get(code) && attempts < 20);
+  } while (getUserByInviteCode.get(code) && attempts < 50);
   setInviteCode.run(code, user.id);
   return code;
 }

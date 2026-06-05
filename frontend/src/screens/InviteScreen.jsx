@@ -245,7 +245,7 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <input
             type="text"
             value={inputCode}
@@ -254,16 +254,16 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
             maxLength={12}
             onKeyDown={e => e.key === 'Enter' && handleRedeem()}
             style={{
-              flex: 1, padding: '12px 14px',
+              width: '100%', padding: '12px 14px',
               background: 'var(--bg3)', border: '1px solid var(--border)',
               borderRadius: 'var(--radius-sm)', color: 'var(--text)',
               fontSize: '15px', fontFamily: 'Orbitron, sans-serif',
-              letterSpacing: '2px', outline: 'none',
+              letterSpacing: '2px', outline: 'none', textAlign: 'center',
             }}
           />
           <button
-            className="btn btn-primary"
-            style={{ padding: '12px 16px', fontSize: '14px', whiteSpace: 'nowrap' }}
+            className="btn btn-primary btn-full"
+            style={{ fontSize: '15px', padding: '14px' }}
             onClick={handleRedeem}
             disabled={redeeming || !inputCode.trim() || result?.success}
           >
