@@ -240,6 +240,9 @@ function startBot() {
       await ctx.reply('שגיאה בשליפת הקוד');
     }
   });
+
+  // ─── /help ────────────────────────────────────────────────────────────────
+  bot.command('help', async (ctx) => {
     await ctx.reply(L(ctx.from.id).help);
   });
 
