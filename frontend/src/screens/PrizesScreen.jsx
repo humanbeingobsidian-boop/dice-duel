@@ -32,14 +32,17 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       if (data.success) {
         hapticNotification('success');
         onBalanceUpdate(data.balance);
-        setResult({ success: true, message: `✅ ${lang === 'he' ? 'הפרס הוזמן! תקבל אותו תוך 24 שעות.' : lang === 'ru' ? 'Приз заказан! Получите в течение 24 часов.' : 'Prize ordered! You will receive it within 24 hours.'}` });
+        setResult({ success: true, message: t('prizes_order_ok', lang) });
       } else {
         hapticNotification('error');
-        setResult({ success: false, message: data.error || t('prizes_buying', lang) });
+        const errMsgs = {
+          'אין מספיק מטבעות': t('prizes_not_enough', lang),
+        };
+        setResult({ success: false, message: errMsgs[data.error] || t('prizes_error', lang) });
       }
     } catch {
       hapticNotification('error');
-      setResult({ success: false, message: lang === 'he' ? 'שגיאת חיבור' : lang === 'ru' ? 'Ошибка подключения' : 'Connection error' });
+      setResult({ success: false, message: t('prizes_conn_error', lang) });
     } finally { setBuying(null); }
   }
 

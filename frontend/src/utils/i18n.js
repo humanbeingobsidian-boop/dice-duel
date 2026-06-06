@@ -117,6 +117,10 @@ const translations = {
     prizes_step2: '2️⃣ Credits are deducted immediately',
     prizes_step3: '3️⃣ Admin sends the prize via Telegram',
     prizes_step4: '4️⃣ You receive a notification when sent',
+    prizes_order_ok: '✅ Prize ordered! You will receive it within 24 hours.',
+    prizes_not_enough: '❌ Not enough credits',
+    prizes_error: '❌ Purchase error, try again',
+    prizes_conn_error: '❌ Connection error, try again',
 
     // Reconnect
     reconnect_title: 'You Left the Game!',
@@ -230,6 +234,10 @@ const translations = {
     prizes_step2: '2️⃣ המטבעות יורדים מיידית',
     prizes_step3: '3️⃣ האדמין שולח את הפרס',
     prizes_step4: '4️⃣ תקבל הודעה בטלגרם שהפרס נשלח',
+    prizes_order_ok: '✅ הפרס הוזמן! תקבל אותו תוך 24 שעות.',
+    prizes_not_enough: '❌ אין מספיק מטבעות',
+    prizes_error: '❌ שגיאה ברכישה, נסה שוב',
+    prizes_conn_error: '❌ שגיאת חיבור, נסה שוב',
 
     reconnect_title: 'יצאת מהמשחק!',
     reconnect_desc: 'חזור לפני שהזמן יגמר כדי להמשיך לשחק',
@@ -342,6 +350,10 @@ const translations = {
     prizes_step2: '2️⃣ Кредиты списываются мгновенно',
     prizes_step3: '3️⃣ Админ отправляет приз',
     prizes_step4: '4️⃣ Вы получите уведомление в Telegram',
+    prizes_order_ok: '✅ Приз заказан! Получите в течение 24 часов.',
+    prizes_not_enough: '❌ Недостаточно кредитов',
+    prizes_error: '❌ Ошибка покупки, попробуйте снова',
+    prizes_conn_error: '❌ Ошибка подключения, попробуйте снова',
 
     reconnect_title: 'Вы вышли из игры!',
     reconnect_desc: 'Вернитесь до истечения времени чтобы продолжить',

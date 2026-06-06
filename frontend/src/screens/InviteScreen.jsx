@@ -14,18 +14,18 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
 
   const STRINGS = {
     he: {
-      title: 'הזמן חברים',
+      title: '👥 הזמן חברים',
       back: '← חזור',
       myCodeTitle: 'הקוד האישי שלך',
       myCodeDesc: 'שתף את הקוד הזה עם חברים. כשהם מזינים אותו — שניכם מקבלים +5 קרדיטים!',
       copy: 'העתק קוד',
       copied: '✓ הועתק!',
-      shareText: (code) => `מצטרף ל-Dice Duel? השתמש בקוד ההזמנה שלי: ${code} וקבל +5 קרדיטים בונוס! 🎲`,
+      shareText: (code, botLink) => `🎲 בוא לשחק Dice Duel!\nהשתמש בקוד ההזמנה שלי: *${code}* וקבל +5 קרדיטים בונוס!\n${botLink}`,
       share: '📤 שתף',
       redeemTitle: 'יש לך קוד הזמנה?',
       redeemDesc: 'הזן קוד של חבר וקבל +5 קרדיטים',
-      placeholder: 'הזן קוד',
-      redeemBtn: 'מימוש קוד',
+      placeholder: 'הזן קוד (למשל: SMOKEY42)',
+      redeemBtn: '✅ מימוש קוד',
       redeeming: 'מממש...',
       howTitle: '📋 איך עובד?',
       how1: '1️⃣ שתף את הקוד האישי שלך עם חברים',
@@ -36,18 +36,18 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
       credits: 'קרדיטים',
     },
     en: {
-      title: 'Invite Friends',
+      title: '👥 Invite Friends',
       back: '← Back',
       myCodeTitle: 'Your Personal Code',
       myCodeDesc: 'Share this code with friends. When they enter it — you both get +5 credits!',
       copy: 'Copy Code',
       copied: '✓ Copied!',
-      shareText: (code) => `Join Dice Duel! Use my invite code: ${code} and get +5 bonus credits! 🎲`,
+      shareText: (code, botLink) => `🎲 Join Dice Duel!\nUse my invite code: *${code}* and get +5 bonus credits!\n${botLink}`,
       share: '📤 Share',
       redeemTitle: 'Have an invite code?',
       redeemDesc: 'Enter a friend\'s code and get +5 credits',
-      placeholder: 'Enter code',
-      redeemBtn: 'Redeem Code',
+      placeholder: 'Enter code (e.g. SMOKEY42)',
+      redeemBtn: '✅ Redeem Code',
       redeeming: 'Redeeming...',
       howTitle: '📋 How it works?',
       how1: '1️⃣ Share your personal code with friends',
@@ -58,18 +58,18 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
       credits: 'credits',
     },
     ru: {
-      title: 'Пригласить друзей',
+      title: '👥 Пригласить друзей',
       back: '← Назад',
       myCodeTitle: 'Твой личный код',
       myCodeDesc: 'Поделись этим кодом с друзьями. Когда они введут его — вы оба получите +5 кредитов!',
       copy: 'Копировать код',
       copied: '✓ Скопировано!',
-      shareText: (code) => `Присоединяйся к Dice Duel! Используй мой код приглашения: ${code} и получи +5 бонусных кредитов! 🎲`,
+      shareText: (code, botLink) => `🎲 Присоединяйся к Dice Duel!\nИспользуй мой код: *${code}* и получи +5 кредитов!\n${botLink}`,
       share: '📤 Поделиться',
       redeemTitle: 'Есть код приглашения?',
       redeemDesc: 'Введи код друга и получи +5 кредитов',
-      placeholder: 'Введи код',
-      redeemBtn: 'Активировать код',
+      placeholder: 'Введи код (напр. SMOKEY42)',
+      redeemBtn: '✅ Активировать код',
       redeeming: 'Активирую...',
       howTitle: '📋 Как это работает?',
       how1: '1️⃣ Поделись своим кодом с друзьями',
@@ -150,11 +150,23 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
   function handleShare() {
     if (!myCode) return;
     haptic('light');
-    const text = s.shareText(myCode);
-    if (navigator.share) {
-      navigator.share({ text }).catch(() => {});
+
+    const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || '';
+    const botLink = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}` : '';
+
+    const shareText = s.shareText(myCode, botLink);
+
+    // Telegram share URL — opens "Forward to..." dialog inside Telegram
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent(shareText)}`;
+
+    // Inside Telegram WebApp — open share sheet
+    if (window.Telegram?.WebApp?.openTelegramLink) {
+      window.Telegram.WebApp.openTelegramLink(tgShareUrl);
+    } else if (window.Telegram?.WebApp?.openLink) {
+      window.Telegram.WebApp.openLink(tgShareUrl);
     } else {
-      navigator.clipboard?.writeText(text).catch(() => {});
+      // Fallback: copy text to clipboard
+      navigator.clipboard?.writeText(`${shareText}\n${botLink}`).catch(() => {});
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
