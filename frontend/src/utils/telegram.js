@@ -82,7 +82,9 @@ export function getStartAppParam() {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get('startapp') || null;
 }
- * Deep link: t.me/bot?start=ref123 → start_param = "ref123"
+
+/**
+ * Get referral code from Telegram start_param or URL ?ref=
  */
 export function getReferralCode() {
   const tg = getTelegramWebApp();
