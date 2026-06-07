@@ -1,6 +1,6 @@
 // frontend/src/screens/InviteScreen.jsx
 import React, { useState, useEffect } from 'react';
-import { getInitData, haptic, hapticNotification } from '../utils/telegram';
+import { getInitData, haptic, hapticNotification, getStartAppParam } from '../utils/telegram';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -84,6 +84,12 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
   const s = STRINGS[lang] || STRINGS.en;
 
   useEffect(() => {
+    // Auto-fill if someone opened via invite link
+    const startParam = getStartAppParam();
+    if (startParam && startParam.length >= 6) {
+      setInputCode(startParam.toUpperCase());
+    }
+
     fetch(`${BACKEND_URL}/api/invite-code`, {
       headers: { 'x-telegram-init-data': getInitData() },
     })
@@ -151,25 +157,23 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
     if (!myCode) return;
     haptic('light');
 
-    const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || '';
-    const MINI_APP = import.meta.env.VITE_MINI_APP_URL || '';
+    const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'DuelDiceBot';
+    const APP_NAME = import.meta.env.VITE_APP_NAME || 'earn';
 
-    // Prefer bot link, fallback to mini app URL
-    const botLink = BOT_USERNAME
-      ? `https://t.me/${BOT_USERNAME}`
-      : MINI_APP || window.location.origin;
+    // Deep link that opens Mini App with the invite code pre-filled
+    const inviteLink = `https://t.me/${BOT_USERNAME}/${APP_NAME}?startapp=${myCode}`;
 
-    const shareText = s.shareText(myCode, botLink);
+    const shareText = s.shareText(myCode, inviteLink);
 
-    // Opens Telegram "Forward to..." dialog with both text + link
-    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent(shareText)}`;
+    // Opens Telegram "Forward to..." dialog
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(tgShareUrl);
     } else if (window.Telegram?.WebApp?.openLink) {
       window.Telegram.WebApp.openLink(tgShareUrl);
     } else {
-      navigator.clipboard?.writeText(`${shareText}\n${botLink}`).catch(() => {});
+      navigator.clipboard?.writeText(`${shareText}\n${inviteLink}`).catch(() => {});
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }

@@ -68,7 +68,20 @@ export function getThemeParams() {
 }
 
 /**
- * Get referral code — from Telegram start_param (deep link) or URL ?ref=
+ * Get invite code from Mini App startapp param.
+ * t.me/Bot/app?startapp=CODE1234 → "CODE1234"
+ */
+export function getStartAppParam() {
+  const tg = getTelegramWebApp();
+  // Telegram passes startapp via initDataUnsafe.start_param
+  const param = tg?.initDataUnsafe?.start_param;
+  if (param && !param.startsWith('ref')) {
+    return param; // it's an invite code
+  }
+  // Fallback: URL ?startapp=
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get('startapp') || null;
+}
  * Deep link: t.me/bot?start=ref123 → start_param = "ref123"
  */
 export function getReferralCode() {

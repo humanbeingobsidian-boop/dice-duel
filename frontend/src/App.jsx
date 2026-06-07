@@ -1,7 +1,7 @@
 // frontend/src/App.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './hooks/useSocket';
-import { getInitData, expandApp, getReferralCode } from './utils/telegram';
+import { getInitData, expandApp, getReferralCode, getStartAppParam } from './utils/telegram';
 
 import SplashScreen from './screens/SplashScreen';
 import LobbyScreen from './screens/LobbyScreen';
@@ -59,6 +59,12 @@ export default function App() {
   // ─── Initial setup ──────────────────────────────────────────────────────────
   useEffect(() => {
     expandApp();
+    // If opened via invite link → go to invite screen after auth
+    const startParam = getStartAppParam();
+    if (startParam && startParam.length >= 6) {
+      // Short delay to let auth complete first
+      setTimeout(() => setScreen(SCREEN.INVITE), 800);
+    }
   }, []);
 
   // ─── Authenticate whenever we connect (or reconnect) ───────────────────────
