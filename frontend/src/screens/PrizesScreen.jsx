@@ -13,11 +13,12 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
   const [result, setResult] = useState(null);
 
   useEffect(() => {
-    fetch(`${BACKEND_URL}/api/prizes`)
+    setLoading(true);
+    fetch(`${BACKEND_URL}/api/prizes?lang=${lang}`)
       .then(r => r.json())
       .then(d => { setPrizes(d.prizes || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [lang]); // re-fetch when language changes
 
   async function handleBuy(prize) {
     if ((user?.balance ?? 0) < prize.cost) return;

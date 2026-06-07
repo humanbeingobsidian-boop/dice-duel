@@ -18,30 +18,53 @@ const {
 module.exports = function createRouter(io) {
   const router = express.Router();
 
-// ─── Prize catalog ────────────────────────────────────────────────────────────
+// ─── Prize catalog (multilingual) ────────────────────────────────────────────
 const PRIZES = [
   {
     id: 'gift_15stars',
-    label: '🎁 Gift — 15 כוכבי Telegram',
-    description: 'תקבל Gift ששווה 15 Telegram Stars דרך הבוט',
-    cost: 30,
     emoji: '🎁',
+    cost: 30,
+    labels: {
+      he: { label: '🎁 Gift — 15 כוכבי Telegram', description: 'תקבל Gift ששווה 15 Telegram Stars דרך הבוט' },
+      en: { label: '🎁 Gift — 15 Telegram Stars',  description: 'Receive a Gift worth 15 Telegram Stars via bot' },
+      ru: { label: '🎁 Gift — 15 звёзд Telegram',  description: 'Получи Gift стоимостью 15 Telegram Stars через бота' },
+    },
   },
   {
     id: 'gift_100stars',
-    label: '⭐ Gift — 100 כוכבי Telegram',
-    description: 'תקבל Gift ששווה 100 Telegram Stars דרך הבוט',
-    cost: 200,
     emoji: '⭐',
+    cost: 200,
+    labels: {
+      he: { label: '⭐ Gift — 100 כוכבי Telegram', description: 'תקבל Gift ששווה 100 Telegram Stars דרך הבוט' },
+      en: { label: '⭐ Gift — 100 Telegram Stars',  description: 'Receive a Gift worth 100 Telegram Stars via bot' },
+      ru: { label: '⭐ Gift — 100 звёзд Telegram',  description: 'Получи Gift стоимостью 100 Telegram Stars через бота' },
+    },
   },
   {
     id: 'gift_1000stars',
-    label: '💫 Gift — 1000 כוכבי Telegram',
-    description: 'תקבל Gift ששווה 1000 Telegram Stars דרך הבוט',
-    cost: 2000,
     emoji: '💫',
+    cost: 2000,
+    labels: {
+      he: { label: '💫 Gift — 1000 כוכבי Telegram', description: 'תקבל Gift ששווה 1000 Telegram Stars דרך הבוט' },
+      en: { label: '💫 Gift — 1000 Telegram Stars',  description: 'Receive a Gift worth 1000 Telegram Stars via bot' },
+      ru: { label: '💫 Gift — 1000 звёзд Telegram',  description: 'Получи Gift стоимостью 1000 Telegram Stars через бота' },
+    },
   },
 ];
+
+// Helper: get prize with labels for a specific lang
+function getPrizesForLang(lang = 'en') {
+  const l = ['he', 'en', 'ru'].includes(lang) ? lang : 'en';
+  return PRIZES.map(p => ({
+    id: p.id,
+    emoji: p.emoji,
+    cost: p.cost,
+    label: p.labels[l].label,
+    description: p.labels[l].description,
+    // keep label for admin notifications (always Hebrew)
+    label_he: p.labels.he.label,
+  }));
+}
 
 // ─── Auth / User ─────────────────────────────────────────────────────────────
 
@@ -112,11 +135,12 @@ router.get('/game/:roomCode', requireTelegramAuth, (req, res) => {
 // ─── Prizes ───────────────────────────────────────────────────────────────────
 
 /**
- * GET /api/prizes
- * Returns the prize catalog.
+ * GET /api/prizes?lang=en
+ * Returns localized prize catalog.
  */
 router.get('/prizes', (req, res) => {
-  res.json({ prizes: PRIZES });
+  const lang = req.query.lang || 'en';
+  res.json({ prizes: getPrizesForLang(lang) });
 });
 
 /**
@@ -142,7 +166,7 @@ router.post('/prizes/buy', requireTelegramAuth, (req, res) => {
       String(tgUser.id),
       tgUser.username || null,
       tgUser.first_name || 'Player',
-      prize
+      { id: prize.id, label: prize.labels.he.label, cost: prize.cost }
     );
 
     // Notify admin via bot (non-blocking)

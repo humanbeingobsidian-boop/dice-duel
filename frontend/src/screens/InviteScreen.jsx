@@ -152,20 +152,23 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
     haptic('light');
 
     const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || '';
-    const botLink = BOT_USERNAME ? `https://t.me/${BOT_USERNAME}` : '';
+    const MINI_APP = import.meta.env.VITE_MINI_APP_URL || '';
+
+    // Prefer bot link, fallback to mini app URL
+    const botLink = BOT_USERNAME
+      ? `https://t.me/${BOT_USERNAME}`
+      : MINI_APP || window.location.origin;
 
     const shareText = s.shareText(myCode, botLink);
 
-    // Telegram share URL — opens "Forward to..." dialog inside Telegram
+    // Opens Telegram "Forward to..." dialog with both text + link
     const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(botLink)}&text=${encodeURIComponent(shareText)}`;
 
-    // Inside Telegram WebApp — open share sheet
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(tgShareUrl);
     } else if (window.Telegram?.WebApp?.openLink) {
       window.Telegram.WebApp.openLink(tgShareUrl);
     } else {
-      // Fallback: copy text to clipboard
       navigator.clipboard?.writeText(`${shareText}\n${botLink}`).catch(() => {});
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -201,17 +204,29 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
           <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text3)' }}>...</div>
         ) : (
           <>
-            {/* Code display */}
-            <div style={{
-              background: 'var(--bg3)', border: '2px solid var(--accent)',
-              borderRadius: 'var(--radius)', padding: '16px',
-              textAlign: 'center', marginBottom: '14px',
-            }}>
+            {/* Code display — tap to copy */}
+            <div
+              onClick={handleCopy}
+              style={{
+                background: 'var(--bg3)', border: `2px solid ${copied ? 'var(--success2)' : 'var(--accent)'}`,
+                borderRadius: 'var(--radius)', padding: '16px',
+                textAlign: 'center', marginBottom: '14px',
+                cursor: 'pointer', transition: 'border-color 0.2s',
+                position: 'relative',
+              }}
+            >
               <div className="font-display" style={{
                 fontSize: '32px', fontWeight: 900, letterSpacing: '4px',
-                color: 'var(--accent2)',
+                color: copied ? 'var(--success2)' : 'var(--accent2)',
+                transition: 'color 0.2s',
               }}>
                 {myCode}
+              </div>
+              <div style={{
+                fontSize: '11px', color: copied ? 'var(--success2)' : 'var(--text3)',
+                marginTop: '4px', transition: 'color 0.2s',
+              }}>
+                {copied ? s.copied : '👆 ' + (lang === 'he' ? 'לחץ להעתקה' : lang === 'ru' ? 'Нажми для копирования' : 'Tap to copy')}
               </div>
             </div>
 
