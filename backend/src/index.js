@@ -4,6 +4,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const { spawn } = require('child_process');
+const path = require('path');
 
 const createApiRouter = require('./routes/api');
 const setupSocket = require('./socket/socketHandler');
@@ -22,14 +24,14 @@ const io = new Server(server, {
   },
 });
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
+// ─── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({
   origin: [FRONTEND_URL, /\.vercel\.app$/, /\.ngrok\.io$/],
   credentials: true,
 }));
 app.use(express.json());
 
-// ─── Routes (pass io so invite endpoint can emit socket events) ───────────────
+// ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api', createApiRouter(io));
 
 app.get('/health', (req, res) => {
@@ -40,8 +42,35 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ─── Socket.IO ───────────────────────────────────────────────────────────────
+// ─── Socket.IO ────────────────────────────────────────────────────────────────
 setupSocket(io);
+
+// ─── Userbot (Python/Pyrogram) ────────────────────────────────────────────────
+function startUserbot() {
+  if (!process.env.TELEGRAM_SESSION) {
+    console.log('ℹ️  TELEGRAM_SESSION not set — userbot not started');
+    return;
+  }
+
+  const userbotPath = path.join(__dirname, 'userbot/userbot.py');
+  const proc = spawn('python3', [userbotPath], {
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  proc.on('error', (err) => {
+    console.warn('⚠️  Userbot process error:', err.message);
+  });
+
+  proc.on('exit', (code) => {
+    if (code !== 0) {
+      console.warn(`⚠️  Userbot exited (code ${code}) — restarting in 15s`);
+      setTimeout(startUserbot, 15000);
+    }
+  });
+
+  console.log('🤖 Userbot process started');
+}
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
@@ -50,4 +79,5 @@ server.listen(PORT, () => {
   console.log(`   Dev mode: ${process.env.DEV_MODE === 'true' ? '✅ ON' : '❌ OFF'}`);
   console.log(`   Frontend: ${FRONTEND_URL}`);
   startBot();
+  startUserbot();
 });
