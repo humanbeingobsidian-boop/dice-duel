@@ -18,7 +18,7 @@ const translations = {
     splash_rule_roll: 'Each player rolls in turn',
     splash_rule_elim: 'Roll a 1? You are out!',
     splash_rule_win: 'Last one standing wins all',
-    splash_bonus: '🎁 New players get 95 free credits!',
+    splash_bonus: '🎁 New players get 5 free credits!',
     splash_play: '🎮 Play Now',
 
     // Lobby
@@ -141,7 +141,7 @@ const translations = {
     splash_rule_roll: 'כל שחקן זורק בתורו',
     splash_rule_elim: 'יצא 1? הודחת!',
     splash_rule_win: 'האחרון שנשאר זוכה',
-    splash_bonus: '🎁 שחקנים חדשים מקבלים 95 קרדיטים חינם!',
+    splash_bonus: '🎁 שחקנים חדשים מקבלים 5 קרדיטים חינם!',
     splash_play: '🎮 התחל לשחק',
 
     lobby_player: 'שחקן',
@@ -257,7 +257,7 @@ const translations = {
     splash_rule_roll: 'Каждый бросает кости по очереди',
     splash_rule_elim: 'Выпало 1? Выбываешь!',
     splash_rule_win: 'Последний выживший забирает всё',
-    splash_bonus: '🎁 Новым игрокам 95 кредитов бесплатно!',
+    splash_bonus: '🎁 Новым игрокам 5 кредитов бесплатно!',
     splash_play: '🎮 Играть',
 
     lobby_player: 'Игрок',
