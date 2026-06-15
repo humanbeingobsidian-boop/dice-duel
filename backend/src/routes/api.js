@@ -212,8 +212,22 @@ router.post('/admin/orders/:id/sent', (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Admin bot notification ───────────────────────────────────────────────────
-// ─── Admin bot notification + Userbot notification ────────────────────────────
+// ─── Shared helper: send via Bot API ─────────────────────────────────────────
+async function sendBotMessage(chatId, text) {
+  const BOT_TOKEN = process.env.BOT_TOKEN;
+  if (!BOT_TOKEN) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+    });
+  } catch (err) {
+    console.error('sendBotMessage error:', err.message);
+  }
+}
+
+// ─── Admin + Userbot notification ────────────────────────────────────────────
 async function notifyAdmin(order, dbUser, prize) {
   const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
   if (!ADMIN_TELEGRAM_ID) return;
@@ -226,15 +240,13 @@ async function notifyAdmin(order, dbUser, prize) {
     `💰 עלות: ${prize.cost} מטבעות\n` +
     `🆔 Order ID: ${order.id}\n` +
     `📅 זמן: ${new Date().toLocaleString('he-IL')}\n\n` +
-    `לאחר שליחת הפרס, סמן כנשלח:\n` +
-    `/sent_${order.id}`;
+    `לאחר שליחת הפרס:\n/sent_${order.id}`;
 
   await sendBotMessage(ADMIN_TELEGRAM_ID, message);
 
-  // ─── קרא ל-userbot HTTP endpoint ──────────────────────────────────────────
+  // קרא ל-userbot
   const USERBOT_URL    = process.env.USERBOT_URL || 'http://localhost:3002';
   const USERBOT_SECRET = process.env.USERBOT_SECRET || 'userbot_secret';
-
   try {
     await fetch(`${USERBOT_URL}/send-prize`, {
       method: 'POST',
@@ -274,7 +286,7 @@ router.get('/invite-code', requireTelegramAuth, (req, res) => {
 
 /**
  * POST /api/invite-code/redeem
- * Body: { code: "SMOKEY42" }
+ * Body: { code: " " }
  * Gives +5 credits to both the redeemer and the inviter.
  */
 router.post('/invite-code/redeem', requireTelegramAuth, (req, res) => {
