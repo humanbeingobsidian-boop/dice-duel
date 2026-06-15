@@ -213,31 +213,45 @@ router.post('/admin/orders/:id/sent', (req, res) => {
 });
 
 // ─── Admin bot notification ───────────────────────────────────────────────────
+// ─── Admin bot notification + Userbot notification ────────────────────────────
 async function notifyAdmin(order, dbUser, prize) {
   const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
-  const BOT_TOKEN = process.env.BOT_TOKEN;
-  if (!ADMIN_TELEGRAM_ID || !BOT_TOKEN) return;
+  if (!ADMIN_TELEGRAM_ID) return;
 
   const username = dbUser.username ? `@${dbUser.username}` : `ID: ${dbUser.telegram_id}`;
   const message =
     `🛍️ *הזמנת פרס חדשה!*\n\n` +
     `👤 שחקן: ${dbUser.first_name} (${username})\n` +
-    `🎁 פרס: ${prize.label}\n` +
+    `🎁 פרס: ${prize.labels.he.label}\n` +
     `💰 עלות: ${prize.cost} מטבעות\n` +
     `🆔 Order ID: ${order.id}\n` +
     `📅 זמן: ${new Date().toLocaleString('he-IL')}\n\n` +
-    `_שלח את הפרס ואז סמן כנשלח:_\n` +
+    `לאחר שליחת הפרס, סמן כנשלח:\n` +
     `/sent_${order.id}`;
 
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: ADMIN_TELEGRAM_ID,
-      text: message,
-      parse_mode: 'Markdown',
-    }),
-  });
+  await sendBotMessage(ADMIN_TELEGRAM_ID, message);
+
+  // ─── קרא ל-userbot HTTP endpoint ──────────────────────────────────────────
+  const USERBOT_URL    = process.env.USERBOT_URL || 'http://localhost:3002';
+  const USERBOT_SECRET = process.env.USERBOT_SECRET || 'userbot_secret';
+
+  try {
+    await fetch(`${USERBOT_URL}/send-prize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Userbot-Secret': USERBOT_SECRET,
+      },
+      body: JSON.stringify({
+        user_id:     dbUser.telegram_id,
+        prize_label: prize.labels.he.label,
+        order_id:    String(order.id),
+      }),
+    });
+    console.log(`📨 Userbot notified for user ${dbUser.telegram_id}`);
+  } catch (err) {
+    console.error('Userbot notify error:', err.message);
+  }
 }
 
 // ─── Invite Code ──────────────────────────────────────────────────────────────
