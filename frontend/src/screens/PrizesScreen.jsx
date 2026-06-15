@@ -86,7 +86,44 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       }}>
         {t('prizes_info', lang)}
       </div>
-
+      {/* Userbot banner */}
+{import.meta.env.VITE_USERBOT_USERNAME && (
+  <div style={{
+    background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))',
+    border: '1px solid rgba(124,58,237,0.4)',
+    borderRadius: 'var(--radius)',
+    padding: '16px',
+    display: 'flex', flexDirection: 'column', gap: '10px',
+  }}>
+    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+      <span style={{ fontSize: '24px' }}>📬</span>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
+          {lang === 'he' ? 'כדי לקבל פרסים' : lang === 'ru' ? 'Чтобы получать призы' : 'To receive prizes'}
+        </div>
+        <div style={{ fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
+          {lang === 'he' ? 'שלח "hi" לחשבון שלנו כדי שנוכל לשלוח לך פרסים דרך Telegram.' :
+           lang === 'ru' ? 'Отправь "hi" нашему аккаунту.' :
+           'Send "hi" to our account so we can deliver your prizes.'}
+        </div>
+      </div>
+    </div>
+    <button
+      className="btn btn-primary btn-full"
+      style={{ fontSize: '14px', padding: '12px' }}
+      onClick={() => {
+        haptic('medium');
+        const url = `https://t.me/${import.meta.env.VITE_USERBOT_USERNAME}`;
+        if (window.Telegram?.WebApp?.openTelegramLink) {
+          window.Telegram.WebApp.openTelegramLink(url);
+        } else { window.open(url, '_blank'); }
+      }}
+    >
+      💬 {lang === 'he' ? `פתח צ'אט עם @${import.meta.env.VITE_USERBOT_USERNAME}` :
+          lang === 'ru' ? `Открыть чат` : `Open chat with @${import.meta.env.VITE_USERBOT_USERNAME}`}
+    </button>
+  </div>
+)}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text2)' }}>{t('prizes_loading', lang)}</div>
       ) : (
