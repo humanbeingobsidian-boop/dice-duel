@@ -21,10 +21,10 @@ db.exec(`
     telegram_id TEXT UNIQUE NOT NULL,
     username TEXT,
     first_name TEXT NOT NULL,
-    balance INTEGER NOT NULL DEFAULT 95,
+    balance INTEGER NOT NULL DEFAULT 15,
     total_games INTEGER NOT NULL DEFAULT 0,
     total_wins INTEGER NOT NULL DEFAULT 0,
-    invite_code TEXT UNIQUE,       -- personal invite code (e.g. SMOKEY42)
+    invite_code TEXT UNIQUE,       -- personal invite code (e.g. CODE42)
     referred_by TEXT,              -- telegram_id of who invited them
     referral_paid INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
