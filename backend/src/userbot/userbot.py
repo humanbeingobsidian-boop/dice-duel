@@ -1,63 +1,78 @@
 # backend/src/userbot/userbot.py
 import os
 import asyncio
-from pyrogram import Client, filters
+from aiohttp import web
+from pyrogram import Client
 
 API_ID   = int(os.environ.get("TELEGRAM_API_ID", "0"))
 API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 SESSION  = os.environ.get("TELEGRAM_SESSION", "")
-BOT_ID   = int(os.environ.get("BOT_TELEGRAM_ID", "0"))
+SECRET   = os.environ.get("USERBOT_SECRET", "userbot_secret")
+PORT     = int(os.environ.get("USERBOT_PORT", "3002"))
 
 if not all([API_ID, API_HASH, SESSION]):
     print("⚠️  Userbot env vars not set — skipping")
     exit(0)
 
-app = Client(
+app_tg = Client(
     name="userbot",
     api_id=API_ID,
     api_hash=API_HASH,
     session_string=SESSION,
 )
 
-@app.on_message(filters.user(BOT_ID) & filters.private)
-async def handle_bot_message(client, message):
-    text = message.text or ""
+# ─── HTTP endpoint שה-backend קורא לו ──────────────────────────────────────
+async def send_prize(request):
+    # אימות
+    auth = request.headers.get("X-Userbot-Secret", "")
+    if auth != SECRET:
+        return web.json_response({"error": "Unauthorized"}, status=401)
 
-    # פורמט: PRIZE_ORDER|user_id|prize_label|order_id
-    if not text.startswith("PRIZE_ORDER|"):
-        return
+    data = await request.json()
+    user_id     = data.get("user_id")
+    prize_label = data.get("prize_label")
+    order_id    = data.get("order_id")
 
-    parts = text.split("|")
-    if len(parts) < 4:
-        return
+    if not all([user_id, prize_label, order_id]):
+        return web.json_response({"error": "Missing fields"}, status=400)
 
-    user_id     = int(parts[1])
-    prize_label = parts[2]
-    order_id    = parts[3]
-
-    print(f"📦 New prize order: user={user_id}, prize={prize_label}, order=#{order_id}")
-
-    msg = (
-        f"🎁 **הפרס שלך התקבל!**\n\n"
-        f"📋 **מה רכשת:** {prize_label}\n"
-        f"🆔 **מספר הזמנה:** #{order_id}\n\n"
-        f"⏳ הפרס יישלח אליך בקרוב.\n"
-        f"תקבל הודעה נוספת ברגע שהפרס נשלח ✅"
-    )
+    print(f"📦 Sending prize notification: user={user_id} prize={prize_label} order=#{order_id}")
 
     try:
-        await client.send_message(user_id, msg)
-        print(f"✅ Message sent to user {user_id}")
+        await app_tg.send_message(
+            int(user_id),
+            f"🎁 **הפרס שלך התקבל!**\n\n"
+            f"📋 **מה רכשת:** {prize_label}\n"
+            f"🆔 **מספר הזמנה:** #{order_id}\n\n"
+            f"⏳ הפרס יישלח אליך בקרוב.\n"
+            f"תקבל הודעה נוספת ברגע שהפרס נשלח ✅"
+        )
+        print(f"✅ Sent to user {user_id}")
+        return web.json_response({"success": True})
     except Exception as e:
-        print(f"❌ Could not send to user {user_id}: {e}")
-        print(f"   (User must start a conversation with this account first)")
+        print(f"❌ Failed to send to user {user_id}: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def health(request):
+    return web.json_response({"status": "ok"})
 
 async def main():
     print("🤖 Userbot starting...")
-    await app.start()
-    me = await app.get_me()
-    print(f"✅ Userbot connected as: {me.first_name} (@{me.username})")
-    print(f"   Listening for messages from bot ID: {BOT_ID}")
+    await app_tg.start()
+    me = await app_tg.get_me()
+    print(f"✅ Userbot connected as: {me.first_name} (ID: {me.id})")
+
+    # הפעל HTTP server
+    web_app = web.Application()
+    web_app.router.add_post("/send-prize", send_prize)
+    web_app.router.add_get("/health", health)
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"🌐 Userbot HTTP server on port {PORT}")
+
     await asyncio.Event().wait()  # run forever
 
 if __name__ == "__main__":
