@@ -2,7 +2,6 @@
 const { Bot, InlineKeyboard } = require('grammy');
 
 const STAR_PACKAGES = [
-  { id: 'stars_1',    label: '⭐ 1 כוכב',     credits: 2,    stars: 1,    description: '2 קרדיטים' },
   { id: 'stars_50',   label: '⭐ 50 כוכבים',  credits: 100,  stars: 50,   description: '100 קרדיטים' },
   { id: 'stars_100',  label: '⭐ 100 כוכבים', credits: 200,  stars: 100,  description: '200 קרדיטים' },
   { id: 'stars_250',  label: '🌟 250 כוכבים', credits: 500,  stars: 250,  description: '500 קרדיטים' },
