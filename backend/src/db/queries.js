@@ -24,6 +24,7 @@ db.exec(`
     balance INTEGER NOT NULL DEFAULT 15,
     total_games INTEGER NOT NULL DEFAULT 0,
     total_wins INTEGER NOT NULL DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0,
     invite_code TEXT UNIQUE,       -- personal invite code (e.g. CODE42)
     referred_by TEXT,              -- telegram_id of who invited them
     referral_paid INTEGER NOT NULL DEFAULT 0,
@@ -162,7 +163,7 @@ const incrementStats = db.prepare(`
 const getLeaderboard = db.prepare(`
   SELECT telegram_id, username, first_name, balance, total_games, total_wins
   FROM users
-  ORDER BY total_wins DESC, balance DESC
+  ORDER BY score DESC, total_wins DESC
   LIMIT 20
 `);
 
@@ -301,6 +302,8 @@ const finalizeGameTransaction = db.transaction((gameId, winnerId, prize, houseFe
   updateGameWinner.run({ game_id: gameId, winner_user_id: winnerId });
   setPlayerWinner.run({ game_id: gameId, user_id: winnerId });
   addBalance.run(prize, winnerId);
+  const scoreToAdd = freshGame.entry_fee >= 100 ? 20 : 1;
+  db.prepare(`UPDATE users SET score = score + ? WHERE id = ?`).run(scoreToAdd, winnerId);
   incrementStats.run({ user_id: winnerId, wins: 1 });
 
   const allPlayers = getGamePlayers.all(gameId);
