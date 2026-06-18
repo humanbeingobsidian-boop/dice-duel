@@ -143,18 +143,41 @@ export default function LobbyScreen({
 
       {/* Stats */}
       {user && (
-        <div style={{ display: 'flex', gap: '10px', width: '100%', maxWidth: '360px' }}>
+        <div style={{
+          display: 'flex', gap: '8px', width: '100%', maxWidth: '360px',
+          flexWrap: 'wrap',
+        }}>
           {[
-            { label: t('lobby_games', lang), value: user.total_games ?? 0 },
-            { label: t('lobby_wins', lang), value: user.total_wins ?? 0 },
-            { label: t('lobby_winrate', lang), value: user.total_games > 0 ? `${Math.round((user.total_wins / user.total_games) * 100)}%` : '0%' },
-          ].map(({ label, value }) => (
+            { label: t('lobby_games', lang),   value: user.total_games ?? 0 },
+            { label: t('lobby_wins', lang),    value: user.total_wins ?? 0 },
+            {
+              label: t('lobby_winrate', lang),
+              value: user.total_games > 0
+                ? `${Math.round((user.total_wins / user.total_games) * 100)}%`
+                : '0%',
+            },
+            {
+              label: lang === 'he' ? 'ניקוד' : lang === 'ru' ? 'Очки' : 'Score',
+              value: (user.score ?? 0).toLocaleString(),
+              highlight: true,
+            },
+          ].map(({ label, value, highlight }) => (
             <div key={label} style={{
-              flex: 1, background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)', padding: '12px', textAlign: 'center',
+              flex: '1 1 calc(50% - 4px)',
+              background: highlight ? 'rgba(124,58,237,0.1)' : 'var(--surface)',
+              border: `1px solid ${highlight ? 'rgba(124,58,237,0.3)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius)', padding: '12px',
+              textAlign: 'center',
             }}>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent2)' }}>{value}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>{label}</div>
+              <div style={{
+                fontSize: '20px', fontWeight: 700,
+                color: highlight ? 'var(--accent2)' : 'var(--accent2)',
+              }}>
+                {value}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>
+                {label}
+              </div>
             </div>
           ))}
         </div>
