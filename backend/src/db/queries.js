@@ -161,7 +161,7 @@ const incrementStats = db.prepare(`
 `);
 
 const getLeaderboard = db.prepare(`
-  SELECT telegram_id, username, first_name, balance, total_games, total_wins
+  SELECT telegram_id, username, first_name, score, total_games, total_wins
   FROM users
   ORDER BY score DESC, total_wins DESC
   LIMIT 20
@@ -295,17 +295,18 @@ const leaveGameTransaction = db.transaction((userId, gameId, entryFee) => {
 });
 
 const finalizeGameTransaction = db.transaction((gameId, winnerId, prize, houseFee) => {
-  // Guard: only pay out if game not already finished
-  const game = db.prepare(`SELECT status FROM games WHERE id = ?`).get(gameId);
+  const game = db.prepare(`SELECT status, entry_fee FROM games WHERE id = ?`).get(gameId);
   if (!game || game.status === 'finished') return false;
-
+ 
   updateGameWinner.run({ game_id: gameId, winner_user_id: winnerId });
   setPlayerWinner.run({ game_id: gameId, user_id: winnerId });
   addBalance.run(prize, winnerId);
-  const scoreToAdd = freshGame.entry_fee >= 100 ? 20 : 1;
-  db.prepare(`UPDATE users SET score = score + ? WHERE id = ?`).run(scoreToAdd, winnerId);
   incrementStats.run({ user_id: winnerId, wins: 1 });
-
+ 
+  // הוסף ניקוד לפי סוג הימור
+  const scoreToAdd = game.entry_fee >= 100 ? 20 : 1;
+  db.prepare(`UPDATE users SET score = score + ? WHERE id = ?`).run(scoreToAdd, winnerId);
+ 
   const allPlayers = getGamePlayers.all(gameId);
   for (const p of allPlayers) {
     if (p.user_id !== winnerId) {
