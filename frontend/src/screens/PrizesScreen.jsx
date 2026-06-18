@@ -5,12 +5,14 @@ import { t } from '../utils/i18n';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const USERBOT_USERNAME = import.meta.env.VITE_USERBOT_USERNAME || '';
 
 export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, onBalanceUpdate }) {
   const [prizes, setPrizes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(null);
   const [result, setResult] = useState(null);
+  const [confirmPrize, setConfirmPrize] = useState(null); // popup state
 
   useEffect(() => {
     setLoading(true);
@@ -18,11 +20,25 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       .then(r => r.json())
       .then(d => { setPrizes(d.prizes || []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [lang]); // re-fetch when language changes
+  }, [lang]);
 
-  async function handleBuy(prize) {
+  // פתח popup אישור
+  function handleBuy(prize) {
     if ((user?.balance ?? 0) < prize.cost) return;
-    haptic('medium'); setBuying(prize.id); setResult(null);
+    haptic('light');
+    setConfirmPrize(prize);
+  }
+
+  // אחרי אישור — בצע רכישה
+  async function handleConfirmBuy() {
+    const prize = confirmPrize;
+    setConfirmPrize(null);
+    if (!prize) return;
+
+    haptic('medium');
+    setBuying(prize.id);
+    setResult(null);
+
     try {
       const res = await fetch(`${BACKEND_URL}/api/prizes/buy`, {
         method: 'POST',
@@ -36,10 +52,7 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
         setResult({ success: true, message: t('prizes_order_ok', lang) });
       } else {
         hapticNotification('error');
-        const errMsgs = {
-          'אין מספיק מטבעות': t('prizes_not_enough', lang),
-        };
-        setResult({ success: false, message: errMsgs[data.error] || t('prizes_error', lang) });
+        setResult({ success: false, message: t('prizes_error', lang) });
       }
     } catch {
       hapticNotification('error');
@@ -50,10 +63,51 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
   return (
     <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-      {/* Header with back + lang */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px',
-      }}>
+      {/* Confirm popup */}
+      {confirmPrize && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 200, padding: '24px',
+        }}>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)', padding: '28px 24px',
+            maxWidth: '320px', width: '100%', textAlign: 'center',
+            animation: 'pop 0.3s ease',
+          }}>
+            <div style={{ fontSize: '52px', marginBottom: '12px' }}>{confirmPrize.emoji}</div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
+              {lang === 'he' ? 'אישור רכישה' : lang === 'ru' ? 'Подтвердить покупку' : 'Confirm Purchase'}
+            </h3>
+            <p style={{ color: 'var(--text2)', fontSize: '14px', marginBottom: '6px' }}>
+              {confirmPrize.label}
+            </p>
+            <p style={{ color: 'var(--gold2)', fontWeight: 700, fontSize: '20px', marginBottom: '24px' }}>
+              🪙 {confirmPrize.cost.toLocaleString()} {lang === 'he' ? 'קרדיטים' : lang === 'ru' ? 'кредитов' : 'credits'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                className="btn btn-ghost"
+                style={{ flex: 1, fontSize: '15px' }}
+                onClick={() => { haptic('light'); setConfirmPrize(null); }}
+              >
+                {lang === 'he' ? '✕ ביטול' : lang === 'ru' ? '✕ Отмена' : '✕ Cancel'}
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, fontSize: '15px' }}
+                onClick={handleConfirmBuy}
+              >
+                {lang === 'he' ? '✓ קנה!' : lang === 'ru' ? '✓ Купить!' : '✓ Buy!'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '14px' }} onClick={onBack}>
             {t('prizes_back', lang)}
@@ -80,50 +134,50 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
         </div>
       )}
 
+      {/* Userbot banner */}
+      {USERBOT_USERNAME && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))',
+          border: '1px solid rgba(124,58,237,0.4)',
+          borderRadius: 'var(--radius)', padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', gap: '10px',
+        }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '22px', flexShrink: 0 }}>📬</span>
+            <div style={{ fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
+              <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '3px' }}>
+                {lang === 'he' ? 'כדי לקבל פרסים' : lang === 'ru' ? 'Чтобы получать призы' : 'To receive prizes'}
+              </strong>
+              {lang === 'he' ? `שלח "hi" ל-@${USERBOT_USERNAME} כדי שנוכל לשלוח לך פרסים.` :
+               lang === 'ru' ? `Отправь "hi" аккаунту @${USERBOT_USERNAME}.` :
+               `Send "hi" to @${USERBOT_USERNAME} so we can deliver your prizes.`}
+            </div>
+          </div>
+          <button
+            className="btn btn-primary btn-full"
+            style={{ fontSize: '13px', padding: '10px' }}
+            onClick={() => {
+              haptic('medium');
+              const url = `https://t.me/${USERBOT_USERNAME}`;
+              if (window.Telegram?.WebApp?.openTelegramLink) {
+                window.Telegram.WebApp.openTelegramLink(url);
+              } else { window.open(url, '_blank'); }
+            }}
+          >
+            💬 {lang === 'he' ? `פתח צ'אט עם @${USERBOT_USERNAME}` :
+                lang === 'ru' ? `Открыть чат с @${USERBOT_USERNAME}` :
+                `Open chat with @${USERBOT_USERNAME}`}
+          </button>
+        </div>
+      )}
+
       <div style={{
         background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
         borderRadius: 'var(--radius)', padding: '10px 14px', fontSize: '13px', color: 'var(--text2)',
       }}>
         {t('prizes_info', lang)}
       </div>
-      {/* Userbot banner */}
-{import.meta.env.VITE_USERBOT_USERNAME && (
-  <div style={{
-    background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))',
-    border: '1px solid rgba(124,58,237,0.4)',
-    borderRadius: 'var(--radius)',
-    padding: '16px',
-    display: 'flex', flexDirection: 'column', gap: '10px',
-  }}>
-    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-      <span style={{ fontSize: '24px' }}>📬</span>
-      <div>
-        <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '4px' }}>
-          {lang === 'he' ? 'כדי לקבל פרסים' : lang === 'ru' ? 'Чтобы получать призы' : 'To receive prizes'}
-        </div>
-        <div style={{ fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
-          {lang === 'he' ? 'שלח "hi" לחשבון שלנו כדי שנוכל לשלוח לך פרסים דרך Telegram.' :
-           lang === 'ru' ? 'Отправь "hi" нашему аккаунту.' :
-           'Send "hi" to our account so we can deliver your prizes.'}
-        </div>
-      </div>
-    </div>
-    <button
-      className="btn btn-primary btn-full"
-      style={{ fontSize: '14px', padding: '12px' }}
-      onClick={() => {
-        haptic('medium');
-        const url = `https://t.me/${import.meta.env.VITE_USERBOT_USERNAME}`;
-        if (window.Telegram?.WebApp?.openTelegramLink) {
-          window.Telegram.WebApp.openTelegramLink(url);
-        } else { window.open(url, '_blank'); }
-      }}
-    >
-      💬 {lang === 'he' ? `פתח צ'אט עם @${import.meta.env.VITE_USERBOT_USERNAME}` :
-          lang === 'ru' ? `Открыть чат` : `Open chat with @${import.meta.env.VITE_USERBOT_USERNAME}`}
-    </button>
-  </div>
-)}
+
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text2)' }}>{t('prizes_loading', lang)}</div>
       ) : (
@@ -133,7 +187,8 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
             const isBuying = buying === prize.id;
             return (
               <div key={prize.id} style={{
-                background: 'var(--surface)', border: `1px solid ${canAfford ? 'var(--border)' : 'rgba(255,255,255,0.05)'}`,
+                background: 'var(--surface)',
+                border: `1px solid ${canAfford ? 'var(--border)' : 'rgba(255,255,255,0.05)'}`,
                 borderRadius: 'var(--radius)', padding: '16px', opacity: canAfford ? 1 : 0.6,
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -162,7 +217,8 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
                             <span style={{
                               width: '12px', height: '12px',
                               border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white',
-                              borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite',
+                              borderRadius: '50%', display: 'inline-block',
+                              animation: 'spin 0.8s linear infinite',
                             }} />
                             {t('prizes_buying', lang)}
                           </span>
@@ -178,7 +234,7 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       )}
 
       <div className="card" style={{ padding: '14px' }}>
-        <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--text2)' }}>
+        <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>
           {t('prizes_how_title', lang)}
         </h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--text3)' }}>
