@@ -9,13 +9,9 @@ const {
 } = require('../db/queries');
 
 const { db } = require('../db/queries');
+const { createBotPlayer, randomBotCount } = require('./botPlayers'); // חלק 1
 
 // ─── In-memory state ──────────────────────────────────────────────────────────
-// roomCode -> {
-//   timer, currentPlayerIndex, started,
-//   turnTimer, turnSecondsLeft,
-//   reconnectTimers: Map<userId, timeoutId>
-// }
 const rooms = new Map();
 
 function generateRoomCode() {
@@ -27,7 +23,6 @@ function rollDice() {
 }
 
 function getOrCreateWaitingRoom(entryFee = 100) {
-  // Find a waiting game with the matching entry_fee
   const game = db.prepare(`
     SELECT g.*, COUNT(gp.id) as player_count
     FROM games g
@@ -60,7 +55,9 @@ function ensureRoomState(roomCode) {
       turnSecondsLeft: 10,
       reconnectTimers: new Map(),
       reconnectSecondsLeft: new Map(),
-      readyPlayers: new Set(), // FIX #4: track ready players
+      readyPlayers: new Set(),
+      botPlayers: [],        // חלק 1: רשימת בוטים in-memory
+      botsScheduled: false,  // חלק 1: מניעת כפילות
     });
   }
   return rooms.get(roomCode);
@@ -101,13 +98,91 @@ function joinGame(telegramUser, io, entryFee = 100) {
     startGame(game.room_code, io);
   }
 
-  // FIX #1: tell the joining player the current countdown state
+  // ─── חלק 1: תזמן כניסת בוטים ────────────────────────────────────────────
+  scheduleBotJoins(game.room_code, game.entry_fee, io);
+
   const countdownActive = roomState.timer !== null;
   return {
     game: updatedGame, players: allPlayers, user: dbUser,
     countdownActive,
     countdownSecondsLeft: roomState.countdownSecondsLeft,
   };
+}
+
+// ─── חלק 1: SCHEDULE BOT JOINS ───────────────────────────────────────────────
+function scheduleBotJoins(roomCode, entryFee, io) {
+  const roomState = ensureRoomState(roomCode);
+  if (roomState.started) return;
+  if (roomState.botsScheduled) return;
+  roomState.botsScheduled = true;
+
+  const botCount = randomBotCount(); // 2-5
+  let delay = 3000; // הבוט הראשון נכנס אחרי 3 שניות
+
+  for (let i = 0; i < botCount; i++) {
+    setTimeout(() => {
+      const currentGame = getGameByRoomCode.get(roomCode);
+      if (!currentGame || currentGame.status !== 'waiting') return;
+
+      const realPlayers = getGamePlayers.all(currentGame.id);
+      const totalCount = realPlayers.length + roomState.botPlayers.length;
+
+      // אל תוסיף יותר מ-6
+      if (totalCount >= currentGame.max_players) return;
+      if (roomState.started) return;
+
+      const bot = createBotPlayer();
+      roomState.botPlayers.push({
+        ...bot,
+        seat_order: totalCount,
+        status: 'active',
+      });
+
+      // בנה רשימת שחקנים מאוחדת (אמיתיים + בוטים) לשליחה ל-UI
+      const allPlayers = buildMergedPlayers(realPlayers, roomState.botPlayers);
+
+      io.to(roomCode).emit('player_joined', {
+        players: allPlayers,
+        pot: currentGame.pot,
+        playerCount: allPlayers.length,
+      });
+
+      console.log(`🤖 Bot "${bot.first_name}" joined room ${roomCode} (${allPlayers.length}/6)`);
+
+      // אם הגענו ל-6 — התחל מיד
+      if (allPlayers.length >= currentGame.max_players && !roomState.started) {
+        clearTimer(roomState);
+        startGame(roomCode, io);
+      }
+    }, delay);
+
+    delay += Math.floor(Math.random() * 2000) + 1000; // 1-3 שניות בין בוט לבוט
+  }
+
+  // אחרי שכל הבוטים נכנסו — הפעל טיימר 60 שניות אם עדיין לא רץ
+  setTimeout(() => {
+    const currentGame = getGameByRoomCode.get(roomCode);
+    if (!currentGame || currentGame.status !== 'waiting') return;
+    const roomSt = rooms.get(roomCode);
+    if (roomSt && !roomSt.started && !roomSt.timer) {
+      startCountdown(roomCode, io);
+    }
+  }, delay + 500);
+}
+
+// ─── Helper: מאחד שחקנים אמיתיים + בוטים לפורמט אחיד ───────────────────────
+function buildMergedPlayers(realPlayers, botPlayers) {
+  return [
+    ...realPlayers,
+    ...botPlayers.map(b => ({
+      user_id: b.id,
+      telegram_id: b.telegram_id,
+      first_name: b.first_name,
+      username: null,
+      status: b.status || 'active',
+      isBot: true,
+    })),
+  ];
 }
 
 // ─── LEAVE WAITING ROOM ───────────────────────────────────────────────────────
@@ -171,15 +246,16 @@ function toggleReady(telegramUser, roomCode, io) {
 
   io.to(roomCode).emit('ready_updated', { readyUserIds, readyCount, totalCount: activePlayers.length });
 
-  // All players ready + at least 2 → start immediately
   if (activePlayers.length >= 2 && readyCount === activePlayers.length) {
     clearTimer(roomState);
     io.to(roomCode).emit('all_ready', {});
-    setTimeout(() => startGame(roomCode, io), 1500); // small delay so UI can show "all ready"
+    setTimeout(() => startGame(roomCode, io), 1500);
   }
 
   return { isReady: roomState.readyPlayers.has(userId), readyUserIds };
 }
+
+// ─── DISCONNECT ───────────────────────────────────────────────────────────────
 function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) return;
@@ -190,12 +266,9 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const roomState = rooms.get(roomCode);
   if (!roomState) return;
 
-  // FIX #1: pause the turn timer while player is disconnected
   clearTurnTimer(roomState);
-  // Tell clients the turn timer is paused
   io.to(roomCode).emit('turn_timer_paused', { userId: dbUser.id });
 
-  // Cancel any existing reconnect timers (re-disconnect case)
   if (roomState.reconnectTimers.has(dbUser.id)) {
     clearTimeout(roomState.reconnectTimers.get(dbUser.id));
     roomState.reconnectTimers.delete(dbUser.id);
@@ -206,7 +279,6 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
     roomState.reconnectTimers.delete(tickKey);
   }
 
-  // Resume from saved seconds (FIX: if reconnected+disconnected again same turn)
   const savedSeconds = roomState.reconnectSecondsLeft.get(dbUser.id);
   let secondsLeft = (savedSeconds && savedSeconds > 0) ? savedSeconds : 30;
 
@@ -247,7 +319,6 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
       updateGameStatus.run({ status: 'finished', id: game.id });
       rooms.delete(roomCode);
     } else {
-      // Resume turn — skip to next player if it was their turn
       const activePlayers = getActivePlayers.all(game.id);
       roomState.currentPlayerIndex = roomState.currentPlayerIndex % activePlayers.length;
       startTurnTimer(roomCode, io);
@@ -258,7 +329,7 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   roomState.reconnectTimers.set(tickKey, tickInterval);
 }
 
-// ─── RECONNECT during active game ────────────────────────────────────────────
+// ─── RECONNECT ────────────────────────────────────────────────────────────────
 function handleReconnect(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) return false;
@@ -266,7 +337,6 @@ function handleReconnect(telegramUser, roomCode, io) {
   const roomState = rooms.get(roomCode);
   if (!roomState) return false;
 
-  // Cancel the abandon timeout
   if (roomState.reconnectTimers.has(dbUser.id)) {
     clearTimeout(roomState.reconnectTimers.get(dbUser.id));
     roomState.reconnectTimers.delete(dbUser.id);
@@ -277,19 +347,15 @@ function handleReconnect(telegramUser, roomCode, io) {
     roomState.reconnectTimers.delete(tickKey);
   }
 
-  // FIX #1: resume turn timer — but only if game is active and no timer running
   const game = getGameByRoomCode.get(roomCode);
   if (game && game.status === 'active' && !roomState.turnTimer) {
-    // Tell everyone player is back and timer is resuming
     if (io) io.to(roomCode).emit('turn_timer_resumed', { userId: dbUser.id });
     startTurnTimer(roomCode, io);
   }
 
-  // Keep reconnectSecondsLeft so if they disconnect again same turn it resumes
   return true;
 }
 
-// Called from _executeRoll to reset saved reconnect seconds after a successful roll
 function clearReconnectSeconds(userId, roomCode) {
   const roomState = rooms.get(roomCode);
   if (roomState) roomState.reconnectSecondsLeft.delete(userId);
@@ -320,31 +386,36 @@ function startGame(roomCode, io) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game || game.status !== 'waiting') return;
 
-  const players = getActivePlayers.all(game.id);
-  if (players.length < 2) {
+  const realPlayers = getActivePlayers.all(game.id);
+  const roomState = ensureRoomState(roomCode);
+  const botPlayers = roomState.botPlayers || [];
+
+  // מינימום 2 שחקנים (אמיתיים + בוטים)
+  if (realPlayers.length + botPlayers.length < 2) {
     io.to(roomCode).emit('game_cancelled', { reason: 'Not enough players' });
     return;
   }
 
-  const roomState = ensureRoomState(roomCode);
   roomState.started = true;
   roomState.currentPlayerIndex = 0;
 
   updateGameStatus.run({ status: 'active', id: game.id });
 
+  // רשימה מאוחדת לשחקן
+  const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
+
   io.to(roomCode).emit('game_started', {
-    players,
-    currentPlayer: players[0],
+    players: allPlayers,
+    currentPlayer: allPlayers[0],
     pot: game.pot,
   });
 
-  console.log(`🎮 Game ${roomCode} started with ${players.length} players`);
+  console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${botPlayers.length} bots`);
 
-  // Start the first turn timer
   startTurnTimer(roomCode, io);
 }
 
-// ─── TURN TIMER (10s auto-roll) ───────────────────────────────────────────────
+// ─── TURN TIMER ───────────────────────────────────────────────────────────────
 function startTurnTimer(roomCode, io) {
   const roomState = rooms.get(roomCode);
   if (!roomState) return;
@@ -360,12 +431,15 @@ function startTurnTimer(roomCode, io) {
 
     if (roomState.turnSecondsLeft <= 0) {
       clearTurnTimer(roomState);
-      // Auto-roll for the current player
       const game = getGameByRoomCode.get(roomCode);
       if (!game || game.status !== 'active') return;
-      const activePlayers = getActivePlayers.all(game.id);
-      if (!activePlayers.length) return;
-      const currentPlayer = activePlayers[roomState.currentPlayerIndex % activePlayers.length];
+
+      const realPlayers = getActivePlayers.all(game.id);
+      const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
+      const allActive = buildMergedPlayers(realPlayers, botPlayers);
+      if (!allActive.length) return;
+
+      const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
       if (!currentPlayer) return;
 
       console.log(`⏰ Auto-rolling for ${currentPlayer.first_name} in room ${roomCode}`);
@@ -374,7 +448,7 @@ function startTurnTimer(roomCode, io) {
   }, 1000);
 }
 
-// ─── ROLL DICE (called by player or auto-timer) ───────────────────────────────
+// ─── ROLL DICE ────────────────────────────────────────────────────────────────
 function rollDiceForPlayer(roomCode, telegramUserId, io) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game || game.status !== 'active') throw new Error('GAME_NOT_ACTIVE');
@@ -385,10 +459,12 @@ function rollDiceForPlayer(roomCode, telegramUserId, io) {
   const roomState = rooms.get(roomCode);
   if (!roomState) throw new Error('ROOM_NOT_FOUND');
 
-  const activePlayers = getActivePlayers.all(game.id);
-  if (!activePlayers.length) throw new Error('NO_ACTIVE_PLAYERS');
+  const realPlayers = getActivePlayers.all(game.id);
+  const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
+  const allActive = buildMergedPlayers(realPlayers, botPlayers);
+  if (!allActive.length) throw new Error('NO_ACTIVE_PLAYERS');
 
-  const currentPlayer = activePlayers[roomState.currentPlayerIndex % activePlayers.length];
+  const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
   if (!currentPlayer || currentPlayer.user_id !== dbUser.id) throw new Error('NOT_YOUR_TURN');
 
   clearTurnTimer(roomState);
@@ -397,21 +473,34 @@ function rollDiceForPlayer(roomCode, telegramUserId, io) {
 
 // ─── CORE ROLL LOGIC ─────────────────────────────────────────────────────────
 function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, io) {
-  // FIX #3: player rolled successfully — clear their saved reconnect seconds
   roomState.reconnectSecondsLeft.delete(userId);
   const diceResult = rollDice();
   const isEliminated = diceResult === 1;
 
-  recordTurn.run({ game_id: game.id, user_id: userId, dice_result: diceResult, was_eliminated: isEliminated ? 1 : 0 });
-  if (isEliminated) eliminatePlayer.run({ game_id: game.id, user_id: userId });
+  // בדוק אם זה בוט או שחקן אמיתי
+  const isBot = (roomState.botPlayers || []).some(b => b.id === userId);
 
-  const remainingPlayers = getActivePlayers.all(game.id);
+  if (!isBot) {
+    // שחקן אמיתי — שמור ב-DB
+    recordTurn.run({ game_id: game.id, user_id: userId, dice_result: diceResult, was_eliminated: isEliminated ? 1 : 0 });
+    if (isEliminated) eliminatePlayer.run({ game_id: game.id, user_id: userId });
+  } else {
+    // בוט — עדכן status in-memory בלבד
+    if (isEliminated) {
+      const bot = roomState.botPlayers.find(b => b.id === userId);
+      if (bot) bot.status = 'eliminated';
+    }
+  }
+
+  // בנה רשימת שחקנים פעילים מעודכנת
+  const realRemaining = getActivePlayers.all(game.id);
+  const botRemaining = (roomState.botPlayers || []).filter(b => b.status === 'active');
+  const remainingPlayers = buildMergedPlayers(realRemaining, botRemaining);
 
   io.to(roomCode).emit('dice_rolled', {
     userId, telegramId, firstName, diceResult, isEliminated, remainingPlayers,
   });
 
-  // FIX #3: delay end-of-game by 2.5s so players see the final dice result
   if (remainingPlayers.length <= 1) {
     setTimeout(() => {
       if (remainingPlayers.length === 1) {
@@ -425,7 +514,6 @@ function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, 
     return { diceResult, isEliminated, gameOver: true };
   }
 
-  // Advance turn index
   if (!isEliminated) {
     roomState.currentPlayerIndex = (roomState.currentPlayerIndex + 1) % remainingPlayers.length;
   } else {
@@ -437,29 +525,38 @@ function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, 
     remainingPlayers,
   });
 
-  // Start next turn timer
   startTurnTimer(roomCode, io);
-
   return { diceResult, isEliminated, gameOver: false };
 }
 
 // ─── END GAME ─────────────────────────────────────────────────────────────────
 function endGame(roomCode, winner, game, io) {
   const freshGame = getGameById.get(game.id);
-  if (!freshGame || freshGame.status === 'finished') return; // guard double-call
+  if (!freshGame || freshGame.status === 'finished') return;
 
   const pot = freshGame.pot;
   const houseCut = Math.floor((pot * freshGame.house_fee_percent) / 100);
   const prize = pot - houseCut;
 
-  finalizeGameTransaction(game.id, winner.user_id, prize, houseCut);
+  const isBot = winner.isBot === true;
 
-  io.to(roomCode).emit('game_over', {
-    winner: { userId: winner.user_id, telegramId: winner.telegram_id, firstName: winner.first_name, username: winner.username },
-    pot, prize, houseCut,
-  });
-
-  console.log(`🏆 Game ${roomCode} won by ${winner.first_name} — prize: ${prize}`);
+  if (!isBot) {
+    // שחקן אמיתי ניצח — שלם פרס
+    finalizeGameTransaction(game.id, winner.user_id, prize, houseCut);
+    io.to(roomCode).emit('game_over', {
+      winner: { userId: winner.user_id, telegramId: winner.telegram_id, firstName: winner.first_name, username: winner.username },
+      pot, prize, houseCut,
+    });
+    console.log(`🏆 ${winner.first_name} (real player) won — prize: ${prize}`);
+  } else {
+    // בוט ניצח — הכסף "נשרף" (הבית לוקח הכל)
+    updateGameStatus.run({ status: 'finished', id: game.id });
+    io.to(roomCode).emit('game_over', {
+      winner: { userId: winner.user_id, telegramId: winner.telegram_id, firstName: winner.first_name, username: null, isBot: true },
+      pot, prize: 0, houseCut: pot, // הבית לוקח הכל
+    });
+    console.log(`🤖 ${winner.first_name} (bot) won — pot ${pot} burned`);
+  }
 
   const roomState = rooms.get(roomCode);
   if (roomState) { clearTimer(roomState); clearTurnTimer(roomState); }
@@ -470,19 +567,26 @@ function endGame(roomCode, winner, game, io) {
 function getRoomSnapshot(roomCode, userId) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game) return null;
-  const players = getGamePlayers.all(game.id);
-  const activePlayers = getActivePlayers.all(game.id);
+  const realPlayers = getGamePlayers.all(game.id);
   const roomState = rooms.get(roomCode);
+  const botPlayers = roomState?.botPlayers || [];
+  const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
+
+  const realActive = getActivePlayers.all(game.id);
+  const botActive = botPlayers.filter(b => b.status === 'active');
+  const activePlayers = buildMergedPlayers(realActive, botActive);
+
   let currentPlayer = null;
   if (roomState && activePlayers.length > 0) {
     currentPlayer = activePlayers[roomState.currentPlayerIndex % activePlayers.length];
   }
-  // Tell this user their remaining reconnect window (if any)
+
   const reconnectSecondsLeft = userId && roomState
     ? (roomState.reconnectSecondsLeft.get(userId) ?? null)
     : null;
+
   return {
-    game, players, activePlayers, currentPlayer,
+    game, players: allPlayers, activePlayers, currentPlayer,
     started: roomState?.started || false,
     turnSecondsLeft: roomState?.turnSecondsLeft ?? 10,
     reconnectSecondsLeft,
