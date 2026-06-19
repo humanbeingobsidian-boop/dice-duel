@@ -149,6 +149,26 @@ function scheduleBotJoins(roomCode, entryFee, io) {
 
       console.log(`🤖 Bot "${bot.first_name}" joined room ${roomCode} (${allPlayers.length}/6)`);
 
+      // בוט לוחץ Ready אחרי שנייה אחת
+      setTimeout(() => {
+        if (roomState.started) return;
+        roomState.readyPlayers.add(bot.id);
+        const realP = getGamePlayers.all(currentGame.id).filter(p => p.status === 'active');
+        const allP  = buildMergedPlayers(realP, roomState.botPlayers);
+        const readyCount = allP.filter(p => roomState.readyPlayers.has(p.user_id)).length;
+        io.to(roomCode).emit('ready_updated', {
+          readyUserIds: Array.from(roomState.readyPlayers),
+          readyCount,
+          totalCount: allP.length,
+        });
+        // אם כולם מוכנים — התחל מיד
+        if (allP.length >= 2 && readyCount === allP.length && !roomState.started) {
+          clearTimer(roomState);
+          io.to(roomCode).emit('all_ready', {});
+          setTimeout(() => startGame(roomCode, io), 1500);
+        }
+      }, 1000);
+
       // אם הגענו ל-6 — התחל מיד
       if (allPlayers.length >= currentGame.max_players && !roomState.started) {
         clearTimer(roomState);
@@ -446,6 +466,30 @@ function startTurnTimer(roomCode, io) {
       _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, game, roomState, io);
     }
   }, 1000);
+
+  // אם התור הוא של בוט — זרוק אוטומטית אחרי 1-4 שניות
+  const checkBotTurn = () => {
+    const game = getGameByRoomCode.get(roomCode);
+    if (!game || game.status !== 'active') return;
+    const realPlayers = getActivePlayers.all(game.id);
+    const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
+    const allActive = buildMergedPlayers(realPlayers, botPlayers);
+    if (!allActive.length) return;
+    const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
+    if (currentPlayer?.isBot) {
+      const delay = Math.floor(Math.random() * 3000) + 1000; // 1-4 שניות
+      setTimeout(() => {
+        if (!roomState.turnTimer) return; // כבר התגלגל
+        clearTurnTimer(roomState);
+        const freshGame = getGameByRoomCode.get(roomCode);
+        if (!freshGame || freshGame.status !== 'active') return;
+        console.log(`🤖 Bot ${currentPlayer.first_name} rolling after ${delay}ms`);
+        _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, freshGame, roomState, io);
+      }, delay);
+    }
+  };
+  // בדוק מיד אם התור של בוט
+  checkBotTurn();
 }
 
 // ─── ROLL DICE ────────────────────────────────────────────────────────────────
