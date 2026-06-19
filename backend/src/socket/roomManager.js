@@ -98,6 +98,17 @@ function joinGame(telegramUser, io, entryFee = 100) {
     startGame(game.room_code, io);
   }
 
+  // ─── Push notification: שלח הודעה לשחקנים שיש חדר פעיל ─────────────────────
+  // שלח רק אם זה שחקן אמיתי ראשון בחדר (playerCount === 1)
+  if (playerCount === 1) {
+    // אחרי 30 שניות — אם עדיין ממתינים — שלח push לשחקן
+    setTimeout(() => {
+      const currentGame = getGameById.get(updatedGame.id);
+      if (!currentGame || currentGame.status !== 'waiting') return;
+      sendPushToWaitingPlayers(game.room_code, game.entry_fee);
+    }, 30000);
+  }
+
   // ─── חלק 1: תזמן כניסת בוטים ────────────────────────────────────────────
   scheduleBotJoins(game.room_code, game.entry_fee, io);
 
@@ -107,6 +118,42 @@ function joinGame(telegramUser, io, entryFee = 100) {
     countdownActive,
     countdownSecondsLeft: roomState.countdownSecondsLeft,
   };
+}
+
+// ─── PUSH NOTIFICATION ───────────────────────────────────────────────────────
+async function sendPushToWaitingPlayers(roomCode, entryFee) {
+  const BOT_TOKEN = process.env.BOT_TOKEN;
+  if (!BOT_TOKEN) return;
+
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'waiting') return;
+
+  const players = getGamePlayers.all(game.id);
+  const tableType = entryFee >= 100 ? '💎 הימור גבוה' : '🎲 הימור נמוך';
+  const MINI_APP_URL = process.env.MINI_APP_URL || '';
+
+  for (const player of players) {
+    try {
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: player.telegram_id,
+          text:
+            `🎲 *יש שחקנים שממתינים!*\n\n` +
+            `שולחן: ${tableType}\n` +
+            `חזור למשחק ותתחיל לשחק! 🏆`,
+          parse_mode: 'Markdown',
+          reply_markup: MINI_APP_URL ? {
+            inline_keyboard: [[{
+              text: '🎲 חזור למשחק',
+              web_app: { url: MINI_APP_URL },
+            }]],
+          } : undefined,
+        }),
+      });
+    } catch {}
+  }
 }
 
 // ─── חלק 1: SCHEDULE BOT JOINS ───────────────────────────────────────────────
@@ -147,7 +194,7 @@ function scheduleBotJoins(roomCode, entryFee, io) {
         playerCount: allPlayers.length,
       });
 
-      console.log(`🤖 Bot "${bot.first_name}" joined room ${roomCode} (${allPlayers.length}/6)`);
+      console.log(`Room ${roomCode}: ${allPlayers.length}/6 players`);
 
       // בוט לוחץ Ready אחרי שנייה אחת
       setTimeout(() => {
@@ -477,13 +524,12 @@ function startTurnTimer(roomCode, io) {
     if (!allActive.length) return;
     const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
     if (currentPlayer?.isBot) {
-      const delay = Math.floor(Math.random() * 3000) + 1000; // 1-4 שניות
+      const delay = Math.floor(Math.random() * 3000) + 1000;
       setTimeout(() => {
-        if (!roomState.turnTimer) return; // כבר התגלגל
+        if (!roomState.turnTimer) return;
         clearTurnTimer(roomState);
         const freshGame = getGameByRoomCode.get(roomCode);
         if (!freshGame || freshGame.status !== 'active') return;
-        console.log(`🤖 Bot ${currentPlayer.first_name} rolling after ${delay}ms`);
         _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, freshGame, roomState, io);
       }, delay);
     }
@@ -585,21 +631,28 @@ function endGame(roomCode, winner, game, io) {
   const isBot = winner.isBot === true;
 
   if (!isBot) {
-    // שחקן אמיתי ניצח — שלם פרס
+    // שחקן אמיתי ניצח — מקבל את הקופה כולל כסף הבוטים
     finalizeGameTransaction(game.id, winner.user_id, prize, houseCut);
-    io.to(roomCode).emit('game_over', {
-      winner: { userId: winner.user_id, telegramId: winner.telegram_id, firstName: winner.first_name, username: winner.username },
-      pot, prize, houseCut,
-    });
-    console.log(`🏆 ${winner.first_name} (real player) won — prize: ${prize}`);
   } else {
-    // בוט ניצח — הכסף "נשרף" (הבית לוקח הכל)
+    // בוט ניצח — הכסף נשרף
     updateGameStatus.run({ status: 'finished', id: game.id });
-    io.to(roomCode).emit('game_over', {
-      winner: { userId: winner.user_id, telegramId: winner.telegram_id, firstName: winner.first_name, username: null, isBot: true },
-      pot, prize: 0, houseCut: pot, // הבית לוקח הכל
-    });
-    console.log(`🤖 ${winner.first_name} (bot) won — pot ${pot} burned`);
+  }
+
+  io.to(roomCode).emit('game_over', {
+    // לא חושפים שהוא בוט — נראה כמו שחקן רגיל
+    winner: {
+      userId: winner.user_id,
+      telegramId: winner.telegram_id,
+      firstName: winner.first_name,
+      username: winner.username || null,
+    },
+    pot,
+    prize: isBot ? 0 : prize,
+    houseCut: isBot ? pot : houseCut,
+  });
+
+  if (!isBot) {
+    console.log(`🏆 ${winner.first_name} won — prize: ${prize}`);
   }
 
   const roomState = rooms.get(roomCode);
