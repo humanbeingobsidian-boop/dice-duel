@@ -475,10 +475,11 @@ function startGame(roomCode, io) {
   // רשימה מאוחדת לשחקן
   const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
 
+  const freshGameForStart = getGameById.get(game.id);
   io.to(roomCode).emit('game_started', {
     players: allPlayers,
     currentPlayer: allPlayers[0],
-    pot: game.pot,
+    pot: freshGameForStart.pot,
   });
 
   console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${botPlayers.length} bots`);
