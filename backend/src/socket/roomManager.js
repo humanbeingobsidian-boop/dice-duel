@@ -185,12 +185,16 @@ function scheduleBotJoins(roomCode, entryFee, io) {
         status: 'active',
       });
 
+      // הוסף את דמי הכניסה של הבוט לקופה
+      db.prepare(`UPDATE games SET pot = pot + ? WHERE id = ?`).run(currentGame.entry_fee, currentGame.id);
+      const freshGame = getGameById.get(currentGame.id);
+
       // בנה רשימת שחקנים מאוחדת (אמיתיים + בוטים) לשליחה ל-UI
       const allPlayers = buildMergedPlayers(realPlayers, roomState.botPlayers);
 
       io.to(roomCode).emit('player_joined', {
         players: allPlayers,
-        pot: currentGame.pot,
+        pot: freshGame.pot,
         playerCount: allPlayers.length,
       });
 
