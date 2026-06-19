@@ -310,8 +310,9 @@ function toggleReady(telegramUser, roomCode, io) {
     roomState.readyPlayers.add(userId);
   }
 
-  const allPlayers = getGamePlayers.all(game.id);
-  const activePlayers = allPlayers.filter(p => p.status === 'active');
+  const realPlayers = getGamePlayers.all(game.id).filter(p => p.status === 'active');
+  const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
+  const activePlayers = buildMergedPlayers(realPlayers, botPlayers);
   const readyCount = activePlayers.filter(p => roomState.readyPlayers.has(p.user_id)).length;
   const readyUserIds = Array.from(roomState.readyPlayers);
 
