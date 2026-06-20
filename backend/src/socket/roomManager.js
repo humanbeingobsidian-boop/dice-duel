@@ -88,7 +88,15 @@ function joinGame(telegramUser, io, entryFee = 100) {
   const roomState = ensureRoomState(game.room_code);
   const playerCount = allPlayers.length;
 
-  io.to(game.room_code).emit('player_joined', { players: allPlayers, pot: updatedGame.pot, playerCount });
+  // FIX #2: כלול בוטים קיימים ברשימה שנשלחת לשחקן שהצטרף
+  const botsAlreadyInRoom = roomState.botPlayers || [];
+  const allPlayersWithBots = buildMergedPlayers(allPlayers, botsAlreadyInRoom);
+
+  io.to(game.room_code).emit('player_joined', {
+    players: allPlayersWithBots,
+    pot: updatedGame.pot,
+    playerCount: allPlayersWithBots.length,
+  });
 
   if (playerCount >= 2 && !roomState.timer && !roomState.started) {
     startCountdown(game.room_code, io);
@@ -114,7 +122,7 @@ function joinGame(telegramUser, io, entryFee = 100) {
 
   const countdownActive = roomState.timer !== null;
   return {
-    game: updatedGame, players: allPlayers, user: dbUser,
+    game: updatedGame, players: allPlayersWithBots, user: dbUser,
     countdownActive,
     countdownSecondsLeft: roomState.countdownSecondsLeft,
   };
@@ -461,7 +469,6 @@ function startGame(roomCode, io) {
   const roomState = ensureRoomState(roomCode);
   const botPlayers = roomState.botPlayers || [];
 
-  // מינימום 2 שחקנים (אמיתיים + בוטים)
   if (realPlayers.length + botPlayers.length < 2) {
     io.to(roomCode).emit('game_cancelled', { reason: 'Not enough players' });
     return;
@@ -472,13 +479,15 @@ function startGame(roomCode, io) {
 
   updateGameStatus.run({ status: 'active', id: game.id });
 
-  // רשימה מאוחדת לשחקן
+  // FIX #1: ערבב את סדר השחקנים רנדומלית
   const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
+  const shuffled = [...allPlayers].sort(() => Math.random() - 0.5);
 
+  const freshGameForStart = getGameById.get(game.id);
   io.to(roomCode).emit('game_started', {
-    players: allPlayers,
-    currentPlayer: allPlayers[0],
-    pot: game.pot,
+    players: shuffled,
+    currentPlayer: shuffled[0],
+    pot: freshGameForStart.pot,
   });
 
   console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${botPlayers.length} bots`);
