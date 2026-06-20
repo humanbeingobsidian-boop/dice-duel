@@ -310,9 +310,8 @@ function toggleReady(telegramUser, roomCode, io) {
     roomState.readyPlayers.add(userId);
   }
 
-  const realPlayers = getGamePlayers.all(game.id).filter(p => p.status === 'active');
-  const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
-  const activePlayers = buildMergedPlayers(realPlayers, botPlayers);
+  const allPlayers = getGamePlayers.all(game.id);
+  const activePlayers = allPlayers.filter(p => p.status === 'active');
   const readyCount = activePlayers.filter(p => roomState.readyPlayers.has(p.user_id)).length;
   const readyUserIds = Array.from(roomState.readyPlayers);
 
@@ -476,11 +475,10 @@ function startGame(roomCode, io) {
   // רשימה מאוחדת לשחקן
   const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
 
-  const freshGameForStart = getGameById.get(game.id);
   io.to(roomCode).emit('game_started', {
     players: allPlayers,
     currentPlayer: allPlayers[0],
-    pot: freshGameForStart.pot,
+    pot: game.pot,
   });
 
   console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${botPlayers.length} bots`);
@@ -635,6 +633,8 @@ function endGame(roomCode, winner, game, io) {
   const prize = pot - houseCut;
 
   const isBot = winner.isBot === true;
+
+  console.log(`🔍 endGame: winner=${winner.first_name} isBot=${isBot} user_id=${winner.user_id} pot=${pot} prize=${prize}`);
 
   if (!isBot) {
     // שחקן אמיתי ניצח — מקבל את הקופה כולל כסף הבוטים
