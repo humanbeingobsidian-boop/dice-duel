@@ -479,9 +479,10 @@ function startGame(roomCode, io) {
 
   updateGameStatus.run({ status: 'active', id: game.id });
 
-  // FIX #1: ערבב את סדר השחקנים רנדומלית
+  // FIX #1: ערבב סדר רנדומלי ושמור אותו ב-roomState
   const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
   const shuffled = [...allPlayers].sort(() => Math.random() - 0.5);
+  roomState.playerOrder = shuffled; // שמור את הסדר הרנדומלי
 
   const freshGameForStart = getGameById.get(game.id);
   io.to(roomCode).emit('game_started', {
@@ -493,6 +494,21 @@ function startGame(roomCode, io) {
   console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${botPlayers.length} bots`);
 
   startTurnTimer(roomCode, io);
+}
+
+// ─── Helper: get active players in original shuffled order ───────────────────
+function getActiveSorted(game, roomState) {
+  const realActive = getActivePlayers.all(game.id);
+  const botActive = (roomState.botPlayers || []).filter(b => b.status === 'active');
+  const allActive = buildMergedPlayers(realActive, botActive);
+
+  // אם יש playerOrder שמור — מיין לפיו
+  if (roomState.playerOrder) {
+    return roomState.playerOrder.filter(p =>
+      allActive.some(a => a.user_id === p.user_id)
+    );
+  }
+  return allActive;
 }
 
 // ─── TURN TIMER ───────────────────────────────────────────────────────────────
@@ -514,15 +530,12 @@ function startTurnTimer(roomCode, io) {
       const game = getGameByRoomCode.get(roomCode);
       if (!game || game.status !== 'active') return;
 
-      const realPlayers = getActivePlayers.all(game.id);
-      const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
-      const allActive = buildMergedPlayers(realPlayers, botPlayers);
+      const allActive = getActiveSorted(game, roomState);
       if (!allActive.length) return;
 
       const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
       if (!currentPlayer) return;
 
-      console.log(`⏰ Auto-rolling for ${currentPlayer.first_name} in room ${roomCode}`);
       _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, game, roomState, io);
     }
   }, 1000);
@@ -531,9 +544,7 @@ function startTurnTimer(roomCode, io) {
   const checkBotTurn = () => {
     const game = getGameByRoomCode.get(roomCode);
     if (!game || game.status !== 'active') return;
-    const realPlayers = getActivePlayers.all(game.id);
-    const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
-    const allActive = buildMergedPlayers(realPlayers, botPlayers);
+    const allActive = getActiveSorted(game, roomState);
     if (!allActive.length) return;
     const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
     if (currentPlayer?.isBot) {
@@ -547,7 +558,6 @@ function startTurnTimer(roomCode, io) {
       }, delay);
     }
   };
-  // בדוק מיד אם התור של בוט
   checkBotTurn();
 }
 
