@@ -572,9 +572,7 @@ function rollDiceForPlayer(roomCode, telegramUserId, io) {
   const roomState = rooms.get(roomCode);
   if (!roomState) throw new Error('ROOM_NOT_FOUND');
 
-  const realPlayers = getActivePlayers.all(game.id);
-  const botPlayers = (roomState.botPlayers || []).filter(b => b.status === 'active');
-  const allActive = buildMergedPlayers(realPlayers, botPlayers);
+  const allActive = getActiveSorted(game, roomState);
   if (!allActive.length) throw new Error('NO_ACTIVE_PLAYERS');
 
   const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
@@ -590,25 +588,20 @@ function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, 
   const diceResult = rollDice();
   const isEliminated = diceResult === 1;
 
-  // בדוק אם זה בוט או שחקן אמיתי
   const isBot = (roomState.botPlayers || []).some(b => b.id === userId);
 
   if (!isBot) {
-    // שחקן אמיתי — שמור ב-DB
     recordTurn.run({ game_id: game.id, user_id: userId, dice_result: diceResult, was_eliminated: isEliminated ? 1 : 0 });
     if (isEliminated) eliminatePlayer.run({ game_id: game.id, user_id: userId });
   } else {
-    // בוט — עדכן status in-memory בלבד
     if (isEliminated) {
       const bot = roomState.botPlayers.find(b => b.id === userId);
       if (bot) bot.status = 'eliminated';
     }
   }
 
-  // בנה רשימת שחקנים פעילים מעודכנת
-  const realRemaining = getActivePlayers.all(game.id);
-  const botRemaining = (roomState.botPlayers || []).filter(b => b.status === 'active');
-  const remainingPlayers = buildMergedPlayers(realRemaining, botRemaining);
+  // רשימת שחקנים פעילים — לפי הסדר הרנדומלי השמור
+  const remainingPlayers = getActiveSorted(game, roomState);
 
   io.to(roomCode).emit('dice_rolled', {
     userId, telegramId, firstName, diceResult, isEliminated, remainingPlayers,
