@@ -106,16 +106,14 @@ function joinGame(telegramUser, io, entryFee = 100) {
     startGame(game.room_code, io);
   }
 
-  // ─── Push notification: שלח הודעה לשחקנים שיש חדר פעיל ─────────────────────
-  // שלח רק אם זה שחקן אמיתי ראשון בחדר (playerCount === 1)
-  if (playerCount === 1) {
-    // אחרי 30 שניות — אם עדיין ממתינים — שלח push לשחקן
-    setTimeout(() => {
-      const currentGame = getGameById.get(updatedGame.id);
-      if (!currentGame || currentGame.status !== 'waiting') return;
-      sendPushToWaitingPlayers(game.room_code, game.entry_fee);
-    }, 30000);
-  }
+  // ─── Push notification: זמנית מבוטל ──────────────────────────────────────
+  // if (playerCount === 1) {
+  //   setTimeout(() => {
+  //     const currentGame = getGameById.get(updatedGame.id);
+  //     if (!currentGame || currentGame.status !== 'waiting') return;
+  //     sendPushToWaitingPlayers(game.room_code, game.entry_fee);
+  //   }, 30000);
+  // }
 
   // ─── חלק 1: תזמן כניסת בוטים ────────────────────────────────────────────
   scheduleBotJoins(game.room_code, game.entry_fee, io);
