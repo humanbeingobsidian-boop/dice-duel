@@ -2,7 +2,7 @@
 const { validateTelegramData } = require('../middleware/telegramAuth');
 const { upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId } = require('../db/queries');
 const {
-  joinGame, leaveWaitingRoom, toggleReady, rollDiceForPlayer,
+  joinGame, leaveWaitingRoom, leaveActiveGame, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect, getRoomSnapshot,
 } = require('./roomManager');
 
@@ -98,17 +98,36 @@ module.exports = function setupSocket(io) {
       }
     });
 
-    // ─── Leave Waiting Room (FIX #4 & #5: explicit leave, free, no cost) ──
+    // ─── Leave Waiting Room ─────────────────────────────────────────────────
     socket.on('leave_game', () => {
       if (!authenticatedUser) return;
       _doLeaveWaiting(socket, authenticatedUser, io);
+    });
+
+    // ─── Leave Active Game After Elimination ────────────────────────────────
+    socket.on('leave_active_game', () => {
+      if (!authenticatedUser || !socket.roomCode) return;
+      try {
+        const result = leaveActiveGame(authenticatedUser.telegramUser, socket.roomCode);
+        socket.leave(result.roomCode);
+        socket.roomCode = null;
+        socket.emit('left_active_game', {});
+        console.log(`🚪 ${authenticatedUser.dbUser.first_name} left active game after elimination`);
+      } catch (err) {
+        const msgs = {
+          NOT_ELIMINATED: 'אפשר לצאת רק אחרי הדחה',
+          GAME_NOT_ACTIVE: 'המשחק לא פעיל',
+          NOT_IN_GAME: 'אתה לא במשחק',
+          USER_NOT_FOUND: 'משתמש לא נמצא',
+        };
+        socket.emit('leave_active_error', { error: msgs[err.message] || 'שגיאה ביציאה מהמשחק' });
+      }
     });
 
     // ─── Reconnect to active game ───────────────────────────────────────────
     socket.on('reconnect_game', ({ roomCode }) => {
       if (!authenticatedUser || !roomCode) return;
 
-      // FIX #1: cancel abandon timer AND resume turn timer
       handleReconnect(authenticatedUser.telegramUser, roomCode, io);
 
       const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
@@ -131,7 +150,6 @@ module.exports = function setupSocket(io) {
     socket.on('find_active_game', () => {
       if (!authenticatedUser) return;
       const { db } = require('../db/queries');
-      // Find any active game this user is still an active player in
       const row = db.prepare(`
         SELECT g.room_code FROM games g
         JOIN game_players gp ON gp.game_id = g.id
@@ -140,7 +158,6 @@ module.exports = function setupSocket(io) {
       `).get(authenticatedUser.dbUser.id);
 
       if (row) {
-        // They have an active game — auto-reconnect them
         const roomCode = row.room_code;
         handleReconnect(authenticatedUser.telegramUser, roomCode, io);
         const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
@@ -183,10 +200,7 @@ module.exports = function setupSocket(io) {
       if (!authenticatedUser) return;
 
       if (socket.roomCode) {
-        // Try to leave waiting room first (FIX #5: auto-leave lobby on close)
         const leftWaiting = _doLeaveWaiting(socket, authenticatedUser, io);
-
-        // If not in waiting room, must be in active game → start 10s timer (FIX #6)
         if (!leftWaiting) {
           handleActiveGameDisconnect(authenticatedUser.telegramUser, socket.roomCode, io);
         }
@@ -201,7 +215,6 @@ function _doLeaveWaiting(socket, authenticatedUser, io) {
     const result = leaveWaitingRoom(authenticatedUser.telegramUser, io);
     socket.leave(result.roomCode);
     socket.roomCode = null;
-    // Send real DB balance — not a calculated delta (prevents double-add bugs)
     const freshUser = getUserByTelegramId.get(String(authenticatedUser.telegramUser.id));
     socket.emit('left_game', { balance: freshUser.balance });
     console.log(`👋 ${authenticatedUser.dbUser.first_name} left waiting room ${result.roomCode}, balance: ${freshUser.balance}`);
