@@ -1,15 +1,15 @@
 // backend/src/socket/roomManager.js
 const crypto = require('crypto');
 const {
-  createGame, getWaitingGame, getGameByRoomCode, getGameById,
+  createGame, getGameByRoomCode, getGameById,
   getGamePlayers, getActivePlayers, updateGameStatus,
   joinGameTransaction, leaveGameTransaction,
   eliminatePlayer, recordTurn, finalizeGameTransaction,
-  getUserByTelegramId, isPlayerInGame,
+  getUserByTelegramId,
 } = require('../db/queries');
 
 const { db } = require('../db/queries');
-const { createBotPlayer, randomBotCount } = require('./botPlayers'); // חלק 1
+const { createBotPlayer, randomBotCount } = require('./botPlayers');
 
 // ─── In-memory state ──────────────────────────────────────────────────────────
 const rooms = new Map();
@@ -20,6 +20,20 @@ function generateRoomCode() {
 
 function rollDice() {
   return Math.floor(Math.random() * 6) + 1;
+}
+
+function shufflePlayers(players) {
+  return [...players].sort(() => Math.random() - 0.5);
+}
+
+function sanitizePlayer(player) {
+  if (!player) return player;
+  const { isBot, balance, ...safe } = player;
+  return safe;
+}
+
+function sanitizePlayers(players = []) {
+  return players.map(sanitizePlayer);
 }
 
 function getOrCreateWaitingRoom(entryFee = 100) {
@@ -56,8 +70,9 @@ function ensureRoomState(roomCode) {
       reconnectTimers: new Map(),
       reconnectSecondsLeft: new Map(),
       readyPlayers: new Set(),
-      botPlayers: [],        // חלק 1: רשימת בוטים in-memory
-      botsScheduled: false,  // חלק 1: מניעת כפילות
+      botPlayers: [],
+      botsScheduled: false,
+      playerOrder: null,
     });
   }
   return rooms.get(roomCode);
@@ -71,6 +86,110 @@ function clearTurnTimer(roomState) {
   if (roomState.turnTimer) { clearInterval(roomState.turnTimer); roomState.turnTimer = null; }
 }
 
+function buildMergedPlayers(realPlayers, botPlayers) {
+  return [
+    ...realPlayers,
+    ...botPlayers.map(b => ({
+      user_id: b.id,
+      telegram_id: b.telegram_id,
+      first_name: b.first_name,
+      username: null,
+      status: b.status || 'active',
+      seat_order: b.seat_order,
+      isBot: true,
+    })),
+  ];
+}
+
+function getAllPlayers(game, roomState) {
+  return buildMergedPlayers(getGamePlayers.all(game.id), roomState?.botPlayers || []);
+}
+
+function getAllActivePlayers(game, roomState) {
+  const realActive = getActivePlayers.all(game.id);
+  const botActive = (roomState?.botPlayers || []).filter(b => b.status === 'active');
+  return buildMergedPlayers(realActive, botActive);
+}
+
+function getActiveSorted(game, roomState) {
+  const allActive = getAllActivePlayers(game, roomState);
+  if (roomState?.playerOrder) {
+    return roomState.playerOrder.filter(p => allActive.some(a => a.user_id === p.user_id));
+  }
+  return allActive;
+}
+
+function getDisplayPlayers(game, roomState) {
+  const allPlayers = getAllPlayers(game, roomState);
+  if (roomState?.playerOrder) {
+    const orderedIds = new Set(roomState.playerOrder.map(p => p.user_id));
+    const ordered = roomState.playerOrder.map(p => allPlayers.find(a => a.user_id === p.user_id)).filter(Boolean);
+    const rest = allPlayers.filter(p => !orderedIds.has(p.user_id));
+    return [...ordered, ...rest];
+  }
+  return allPlayers;
+}
+
+function emitPlayers(roomCode, io, game) {
+  const roomState = ensureRoomState(roomCode);
+  const freshGame = getGameById.get(game.id);
+  const players = getDisplayPlayers(freshGame, roomState);
+  io.to(roomCode).emit('player_joined', {
+    players: sanitizePlayers(players),
+    pot: freshGame.pot,
+    playerCount: players.filter(p => p.status === 'active').length,
+  });
+}
+
+function emitReady(roomCode, io, game) {
+  const roomState = ensureRoomState(roomCode);
+  const activePlayers = getAllActivePlayers(game, roomState);
+  const readyCount = activePlayers.filter(p => roomState.readyPlayers.has(p.user_id)).length;
+  io.to(roomCode).emit('ready_updated', {
+    readyUserIds: Array.from(roomState.readyPlayers),
+    readyCount,
+    totalCount: activePlayers.length,
+  });
+  return { activePlayers, readyCount };
+}
+
+function removeOneWaitingBotForRealPlayer(roomCode, game, io) {
+  const roomState = ensureRoomState(roomCode);
+  const realPlayers = getGamePlayers.all(game.id);
+  if (realPlayers.length < 2) return null;
+
+  const index = roomState.botPlayers.findIndex(b => b.status === 'active');
+  if (index === -1) return null;
+
+  const [bot] = roomState.botPlayers.splice(index, 1);
+  roomState.readyPlayers.delete(bot.id);
+  db.prepare(`UPDATE games SET pot = MAX(0, pot - ?) WHERE id = ?`).run(game.entry_fee, game.id);
+
+  const freshGame = getGameById.get(game.id);
+  const players = getDisplayPlayers(freshGame, roomState);
+  io.to(roomCode).emit('player_left', {
+    userId: bot.id,
+    firstName: bot.first_name,
+    players: sanitizePlayers(players),
+    pot: freshGame.pot,
+    playerCount: players.filter(p => p.status === 'active').length,
+  });
+  return bot;
+}
+
+function maybeStartIfAllReady(roomCode, io, game) {
+  const roomState = ensureRoomState(roomCode);
+  if (roomState.started) return false;
+  const { activePlayers, readyCount } = emitReady(roomCode, io, game);
+  if (activePlayers.length >= 2 && readyCount === activePlayers.length) {
+    clearTimer(roomState);
+    io.to(roomCode).emit('all_ready', {});
+    setTimeout(() => startGame(roomCode, io), 1500);
+    return true;
+  }
+  return false;
+}
+
 // ─── JOIN ─────────────────────────────────────────────────────────────────────
 function joinGame(telegramUser, io, entryFee = 100) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
@@ -82,51 +201,46 @@ function joinGame(telegramUser, io, entryFee = 100) {
     SELECT 1 FROM game_players gp
     JOIN games g ON g.id = gp.game_id
     WHERE gp.user_id = ? AND g.status = 'waiting'
-`).get(dbUser.id);
-if (alreadyInActiveGame) throw new Error('ALREADY_IN_GAME');
+  `).get(dbUser.id);
+  if (alreadyInActiveGame) throw new Error('ALREADY_IN_GAME');
 
   const currentPlayers = getGamePlayers.all(game.id);
   joinGameTransaction(dbUser.id, game.id, game.entry_fee, currentPlayers.length);
 
   const updatedGame = getGameById.get(game.id);
-  const allPlayers = getGamePlayers.all(game.id);
   const roomState = ensureRoomState(game.room_code);
-  const playerCount = allPlayers.length;
 
-  // FIX #2: כלול בוטים קיימים ברשימה שנשלחת לשחקן שהצטרף
-  const botsAlreadyInRoom = roomState.botPlayers || [];
-  const allPlayersWithBots = buildMergedPlayers(allPlayers, botsAlreadyInRoom);
+  // Prefer real players over bots. When a new real player joins an occupied bot room,
+  // remove one active bot and subtract its virtual entry fee from the pot.
+  removeOneWaitingBotForRealPlayer(game.room_code, updatedGame, io);
+
+  const freshGame = getGameById.get(game.id);
+  const allPlayersWithBots = getDisplayPlayers(freshGame, roomState);
 
   io.to(game.room_code).emit('player_joined', {
-    players: allPlayersWithBots,
-    pot: updatedGame.pot,
-    playerCount: allPlayersWithBots.length,
+    players: sanitizePlayers(allPlayersWithBots),
+    pot: freshGame.pot,
+    playerCount: allPlayersWithBots.filter(p => p.status === 'active').length,
   });
 
-  if (playerCount >= 2 && !roomState.timer && !roomState.started) {
+  // Timer now starts as soon as the first real player enters.
+  if (!roomState.timer && !roomState.started) {
     startCountdown(game.room_code, io);
   }
-  if (playerCount >= game.max_players && !roomState.started) {
+
+  scheduleBotJoins(game.room_code, game.entry_fee, io);
+
+  const activeCount = allPlayersWithBots.filter(p => p.status === 'active').length;
+  if (activeCount >= freshGame.max_players && !roomState.started) {
     clearTimer(roomState);
     startGame(game.room_code, io);
   }
 
-  // ─── Push notification: זמנית מבוטל ──────────────────────────────────────
-  // if (playerCount === 1) {
-  //   setTimeout(() => {
-  //     const currentGame = getGameById.get(updatedGame.id);
-  //     if (!currentGame || currentGame.status !== 'waiting') return;
-  //     sendPushToWaitingPlayers(game.room_code, game.entry_fee);
-  //   }, 30000);
-  // }
-
-  // ─── חלק 1: תזמן כניסת בוטים ────────────────────────────────────────────
-  scheduleBotJoins(game.room_code, game.entry_fee, io);
-
-  const countdownActive = roomState.timer !== null;
   return {
-    game: updatedGame, players: allPlayersWithBots, user: dbUser,
-    countdownActive,
+    game: freshGame,
+    players: sanitizePlayers(allPlayersWithBots),
+    user: dbUser,
+    countdownActive: roomState.timer !== null,
     countdownSecondsLeft: roomState.countdownSecondsLeft,
   };
 }
@@ -167,27 +281,25 @@ async function sendPushToWaitingPlayers(roomCode, entryFee) {
   }
 }
 
-// ─── חלק 1: SCHEDULE BOT JOINS ───────────────────────────────────────────────
+// ─── BOT JOINS ───────────────────────────────────────────────────────────────
 function scheduleBotJoins(roomCode, entryFee, io) {
   const roomState = ensureRoomState(roomCode);
   if (roomState.started) return;
   if (roomState.botsScheduled) return;
   roomState.botsScheduled = true;
 
-  const botCount = randomBotCount(); // 2-5
-  let delay = 3000; // הבוט הראשון נכנס אחרי 3 שניות
+  const botCount = randomBotCount(); // 1-4
+  let delay = 3000;
 
   for (let i = 0; i < botCount; i++) {
     setTimeout(() => {
       const currentGame = getGameByRoomCode.get(roomCode);
       if (!currentGame || currentGame.status !== 'waiting') return;
+      if (roomState.started) return;
 
       const realPlayers = getGamePlayers.all(currentGame.id);
-      const totalCount = realPlayers.length + roomState.botPlayers.length;
-
-      // אל תוסיף יותר מ-6
+      const totalCount = realPlayers.length + roomState.botPlayers.filter(b => b.status === 'active').length;
       if (totalCount >= currentGame.max_players) return;
-      if (roomState.started) return;
 
       const bot = createBotPlayer();
       roomState.botPlayers.push({
@@ -195,76 +307,17 @@ function scheduleBotJoins(roomCode, entryFee, io) {
         seat_order: totalCount,
         status: 'active',
       });
+      roomState.readyPlayers.add(bot.id);
 
-      // הוסף את דמי הכניסה של הבוט לקופה
       db.prepare(`UPDATE games SET pot = pot + ? WHERE id = ?`).run(currentGame.entry_fee, currentGame.id);
-      const freshGame = getGameById.get(currentGame.id);
+      emitPlayers(roomCode, io, currentGame);
+      maybeStartIfAllReady(roomCode, io, currentGame);
 
-      // בנה רשימת שחקנים מאוחדת (אמיתיים + בוטים) לשליחה ל-UI
-      const allPlayers = buildMergedPlayers(realPlayers, roomState.botPlayers);
-
-      io.to(roomCode).emit('player_joined', {
-        players: allPlayers,
-        pot: freshGame.pot,
-        playerCount: allPlayers.length,
-      });
-
-      console.log(`Room ${roomCode}: ${allPlayers.length}/6 players`);
-
-      // בוט לוחץ Ready אחרי שנייה אחת
-      setTimeout(() => {
-        if (roomState.started) return;
-        roomState.readyPlayers.add(bot.id);
-        const realP = getGamePlayers.all(currentGame.id).filter(p => p.status === 'active');
-        const allP  = buildMergedPlayers(realP, roomState.botPlayers);
-        const readyCount = allP.filter(p => roomState.readyPlayers.has(p.user_id)).length;
-        io.to(roomCode).emit('ready_updated', {
-          readyUserIds: Array.from(roomState.readyPlayers),
-          readyCount,
-          totalCount: allP.length,
-        });
-        // אם כולם מוכנים — התחל מיד
-        if (allP.length >= 2 && readyCount === allP.length && !roomState.started) {
-          clearTimer(roomState);
-          io.to(roomCode).emit('all_ready', {});
-          setTimeout(() => startGame(roomCode, io), 1500);
-        }
-      }, 1000);
-
-      // אם הגענו ל-6 — התחל מיד
-      if (allPlayers.length >= currentGame.max_players && !roomState.started) {
-        clearTimer(roomState);
-        startGame(roomCode, io);
-      }
+      console.log(`Room ${roomCode}: ${totalCount + 1}/${currentGame.max_players} players`);
     }, delay);
 
-    delay += Math.floor(Math.random() * 2000) + 1000; // 1-3 שניות בין בוט לבוט
+    delay += Math.floor(Math.random() * 2000) + 1000;
   }
-
-  // אחרי שכל הבוטים נכנסו — הפעל טיימר 60 שניות אם עדיין לא רץ
-  setTimeout(() => {
-    const currentGame = getGameByRoomCode.get(roomCode);
-    if (!currentGame || currentGame.status !== 'waiting') return;
-    const roomSt = rooms.get(roomCode);
-    if (roomSt && !roomSt.started && !roomSt.timer) {
-      startCountdown(roomCode, io);
-    }
-  }, delay + 500);
-}
-
-// ─── Helper: מאחד שחקנים אמיתיים + בוטים לפורמט אחיד ───────────────────────
-function buildMergedPlayers(realPlayers, botPlayers) {
-  return [
-    ...realPlayers,
-    ...botPlayers.map(b => ({
-      user_id: b.id,
-      telegram_id: b.telegram_id,
-      first_name: b.first_name,
-      username: null,
-      status: b.status || 'active',
-      isBot: true,
-    })),
-  ];
 }
 
 // ─── LEAVE WAITING ROOM ───────────────────────────────────────────────────────
@@ -281,27 +334,49 @@ function leaveWaitingRoom(telegramUser, io) {
 
   leaveGameTransaction(dbUser.id, row.id, row.entry_fee);
 
-  const remainingPlayers = getGamePlayers.all(row.id);
+  const remainingRealPlayers = getGamePlayers.all(row.id);
   const updatedGame = getGameById.get(row.id);
   const roomState = rooms.get(row.room_code);
 
-  if (roomState) clearTimer(roomState);
-
-  if (remainingPlayers.length >= 2) {
-    startCountdown(row.room_code, io);
-  } else {
+  if (roomState && remainingRealPlayers.length === 0) {
+    clearTimer(roomState);
+    roomState.readyPlayers.clear();
+    roomState.botPlayers = [];
+    db.prepare(`UPDATE games SET pot = 0 WHERE id = ?`).run(row.id);
     io.to(row.room_code).emit('countdown_stopped', {});
+  } else if (roomState && !roomState.timer && !roomState.started) {
+    startCountdown(row.room_code, io);
   }
 
+  const freshGame = getGameById.get(row.id);
+  const players = roomState ? getDisplayPlayers(freshGame, roomState) : remainingRealPlayers;
   io.to(row.room_code).emit('player_left', {
     userId: dbUser.id,
     firstName: dbUser.first_name,
-    players: remainingPlayers,
-    pot: updatedGame.pot,
-    playerCount: remainingPlayers.length,
+    players: sanitizePlayers(players),
+    pot: freshGame.pot,
+    playerCount: players.filter(p => p.status === 'active').length,
   });
 
   return { user: dbUser, roomCode: row.room_code, refunded: row.entry_fee };
+}
+
+// ─── LEAVE ACTIVE GAME AFTER ELIMINATION ─────────────────────────────────────
+function leaveActiveGame(telegramUser, roomCode) {
+  const dbUser = getUserByTelegramId.get(String(telegramUser.id));
+  if (!dbUser) throw new Error('USER_NOT_FOUND');
+
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'active') throw new Error('GAME_NOT_ACTIVE');
+
+  const player = db.prepare(`
+    SELECT status FROM game_players WHERE game_id = ? AND user_id = ? LIMIT 1
+  `).get(game.id, dbUser.id);
+
+  if (!player) throw new Error('NOT_IN_GAME');
+  if (player.status !== 'eliminated') throw new Error('NOT_ELIMINATED');
+
+  return { user: dbUser, roomCode };
 }
 
 // ─── READY TOGGLE ────────────────────────────────────────────────────────────
@@ -321,20 +396,8 @@ function toggleReady(telegramUser, roomCode, io) {
     roomState.readyPlayers.add(userId);
   }
 
-  const allPlayers = getGamePlayers.all(game.id);
-  const activePlayers = allPlayers.filter(p => p.status === 'active');
-  const readyCount = activePlayers.filter(p => roomState.readyPlayers.has(p.user_id)).length;
-  const readyUserIds = Array.from(roomState.readyPlayers);
-
-  io.to(roomCode).emit('ready_updated', { readyUserIds, readyCount, totalCount: activePlayers.length });
-
-  if (activePlayers.length >= 2 && readyCount === activePlayers.length) {
-    clearTimer(roomState);
-    io.to(roomCode).emit('all_ready', {});
-    setTimeout(() => startGame(roomCode, io), 1500);
-  }
-
-  return { isReady: roomState.readyPlayers.has(userId), readyUserIds };
+  maybeStartIfAllReady(roomCode, io, game);
+  return { isReady: roomState.readyPlayers.has(userId), readyUserIds: Array.from(roomState.readyPlayers) };
 }
 
 // ─── DISCONNECT ───────────────────────────────────────────────────────────────
@@ -388,11 +451,11 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
     eliminatePlayer.run({ game_id: game.id, user_id: dbUser.id });
     recordTurn.run({ game_id: game.id, user_id: dbUser.id, dice_result: 0, was_eliminated: 1 });
 
-    const remainingPlayers = getActivePlayers.all(game.id);
+    const remainingPlayers = getActiveSorted(game, roomState);
     io.to(roomCode).emit('player_abandoned', {
       userId: dbUser.id,
       firstName: dbUser.first_name,
-      remainingPlayers,
+      remainingPlayers: sanitizePlayers(remainingPlayers),
     });
 
     if (remainingPlayers.length === 1) {
@@ -401,8 +464,7 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
       updateGameStatus.run({ status: 'finished', id: game.id });
       rooms.delete(roomCode);
     } else {
-      const activePlayers = getActivePlayers.all(game.id);
-      roomState.currentPlayerIndex = roomState.currentPlayerIndex % activePlayers.length;
+      roomState.currentPlayerIndex = roomState.currentPlayerIndex % remainingPlayers.length;
       startTurnTimer(roomCode, io);
     }
   }, secondsLeft * 1000);
@@ -448,7 +510,7 @@ function startCountdown(roomCode, io) {
   const roomState = ensureRoomState(roomCode);
   clearTimer(roomState);
 
-  let secondsLeft = 60;
+  let secondsLeft = roomState.countdownSecondsLeft > 0 ? roomState.countdownSecondsLeft : 60;
   roomState.countdownSecondsLeft = secondsLeft;
   io.to(roomCode).emit('countdown_started', { secondsLeft });
 
@@ -468,11 +530,10 @@ function startGame(roomCode, io) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game || game.status !== 'waiting') return;
 
-  const realPlayers = getActivePlayers.all(game.id);
   const roomState = ensureRoomState(roomCode);
-  const botPlayers = roomState.botPlayers || [];
+  const allPlayers = getAllActivePlayers(game, roomState);
 
-  if (realPlayers.length + botPlayers.length < 2) {
+  if (allPlayers.length < 2) {
     io.to(roomCode).emit('game_cancelled', { reason: 'Not enough players' });
     return;
   }
@@ -482,36 +543,20 @@ function startGame(roomCode, io) {
 
   updateGameStatus.run({ status: 'active', id: game.id });
 
-  // FIX #1: ערבב סדר רנדומלי ושמור אותו ב-roomState
-  const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
-  const shuffled = [...allPlayers].sort(() => Math.random() - 0.5);
-  roomState.playerOrder = shuffled; // שמור את הסדר הרנדומלי
+  // Random order is selected once at game start and is kept top-to-bottom.
+  const shuffled = shufflePlayers(allPlayers);
+  roomState.playerOrder = shuffled;
 
   const freshGameForStart = getGameById.get(game.id);
   io.to(roomCode).emit('game_started', {
-    players: shuffled,
-    currentPlayer: shuffled[0],
+    players: sanitizePlayers(shuffled),
+    currentPlayer: sanitizePlayer(shuffled[0]),
     pot: freshGameForStart.pot,
   });
 
-  console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${botPlayers.length} bots`);
+  console.log(`🎮 Game ${roomCode} started — ${getActivePlayers.all(game.id).length} real + ${(roomState.botPlayers || []).filter(b => b.status === 'active').length} bots`);
 
   startTurnTimer(roomCode, io);
-}
-
-// ─── Helper: get active players in original shuffled order ───────────────────
-function getActiveSorted(game, roomState) {
-  const realActive = getActivePlayers.all(game.id);
-  const botActive = (roomState.botPlayers || []).filter(b => b.status === 'active');
-  const allActive = buildMergedPlayers(realActive, botActive);
-
-  // אם יש playerOrder שמור — מיין לפיו
-  if (roomState.playerOrder) {
-    return roomState.playerOrder.filter(p =>
-      allActive.some(a => a.user_id === p.user_id)
-    );
-  }
-  return allActive;
 }
 
 // ─── TURN TIMER ───────────────────────────────────────────────────────────────
@@ -543,14 +588,14 @@ function startTurnTimer(roomCode, io) {
     }
   }, 1000);
 
-  // אם התור הוא של בוט — זרוק אוטומטית אחרי 1-4 שניות
   const checkBotTurn = () => {
     const game = getGameByRoomCode.get(roomCode);
     if (!game || game.status !== 'active') return;
     const allActive = getActiveSorted(game, roomState);
     if (!allActive.length) return;
     const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
-    if (currentPlayer?.isBot) {
+    const isBot = (roomState.botPlayers || []).some(b => b.id === currentPlayer?.user_id);
+    if (isBot) {
       const delay = Math.floor(Math.random() * 3000) + 1000;
       setTimeout(() => {
         if (!roomState.turnTimer) return;
@@ -596,18 +641,18 @@ function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, 
   if (!isBot) {
     recordTurn.run({ game_id: game.id, user_id: userId, dice_result: diceResult, was_eliminated: isEliminated ? 1 : 0 });
     if (isEliminated) eliminatePlayer.run({ game_id: game.id, user_id: userId });
-  } else {
-    if (isEliminated) {
-      const bot = roomState.botPlayers.find(b => b.id === userId);
-      if (bot) bot.status = 'eliminated';
-    }
+  } else if (isEliminated) {
+    const bot = roomState.botPlayers.find(b => b.id === userId);
+    if (bot) bot.status = 'eliminated';
   }
 
-  // רשימת שחקנים פעילים — לפי הסדר הרנדומלי השמור
   const remainingPlayers = getActiveSorted(game, roomState);
+  const displayPlayers = getDisplayPlayers(game, roomState);
 
   io.to(roomCode).emit('dice_rolled', {
-    userId, telegramId, firstName, diceResult, isEliminated, remainingPlayers,
+    userId, telegramId, firstName, diceResult, isEliminated,
+    remainingPlayers: sanitizePlayers(remainingPlayers),
+    players: sanitizePlayers(displayPlayers),
   });
 
   if (remainingPlayers.length <= 1) {
@@ -630,8 +675,8 @@ function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, 
   }
 
   io.to(roomCode).emit('next_turn', {
-    currentPlayer: remainingPlayers[roomState.currentPlayerIndex],
-    remainingPlayers,
+    currentPlayer: sanitizePlayer(remainingPlayers[roomState.currentPlayerIndex]),
+    remainingPlayers: sanitizePlayers(remainingPlayers),
   });
 
   startTurnTimer(roomCode, io);
@@ -652,15 +697,12 @@ function endGame(roomCode, winner, game, io) {
   console.log(`🔍 endGame: winner=${winner.first_name} isBot=${isBot} user_id=${winner.user_id} pot=${pot} prize=${prize}`);
 
   if (!isBot) {
-    // שחקן אמיתי ניצח — מקבל את הקופה כולל כסף הבוטים
     finalizeGameTransaction(game.id, winner.user_id, prize, houseCut);
   } else {
-    // בוט ניצח — הכסף נשרף
     updateGameStatus.run({ status: 'finished', id: game.id });
   }
 
   io.to(roomCode).emit('game_over', {
-    // לא חושפים שהוא בוט — נראה כמו שחקן רגיל
     winner: {
       userId: winner.user_id,
       telegramId: winner.telegram_id,
@@ -668,8 +710,9 @@ function endGame(roomCode, winner, game, io) {
       username: winner.username || null,
     },
     pot,
-    prize: isBot ? 0 : prize,
-    houseCut: isBot ? pot : houseCut,
+    // If a bot wins, show the same visible prize amount, but do not credit any DB user.
+    prize,
+    houseCut,
   });
 
   if (!isBot) {
@@ -685,14 +728,9 @@ function endGame(roomCode, winner, game, io) {
 function getRoomSnapshot(roomCode, userId) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game) return null;
-  const realPlayers = getGamePlayers.all(game.id);
-  const roomState = rooms.get(roomCode);
-  const botPlayers = roomState?.botPlayers || [];
-  const allPlayers = buildMergedPlayers(realPlayers, botPlayers);
-
-  const realActive = getActivePlayers.all(game.id);
-  const botActive = botPlayers.filter(b => b.status === 'active');
-  const activePlayers = buildMergedPlayers(realActive, botActive);
+  const roomState = rooms.get(roomCode) || ensureRoomState(roomCode);
+  const players = getDisplayPlayers(game, roomState);
+  const activePlayers = getActiveSorted(game, roomState);
 
   let currentPlayer = null;
   if (roomState && activePlayers.length > 0) {
@@ -704,7 +742,10 @@ function getRoomSnapshot(roomCode, userId) {
     : null;
 
   return {
-    game, players: allPlayers, activePlayers, currentPlayer,
+    game,
+    players: sanitizePlayers(players),
+    activePlayers: sanitizePlayers(activePlayers),
+    currentPlayer: sanitizePlayer(currentPlayer),
     started: roomState?.started || false,
     turnSecondsLeft: roomState?.turnSecondsLeft ?? 10,
     reconnectSecondsLeft,
@@ -712,7 +753,7 @@ function getRoomSnapshot(roomCode, userId) {
 }
 
 module.exports = {
-  joinGame, leaveWaitingRoom, toggleReady, rollDiceForPlayer,
+  joinGame, leaveWaitingRoom, leaveActiveGame, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect,
   getRoomSnapshot, ensureRoomState,
 };
