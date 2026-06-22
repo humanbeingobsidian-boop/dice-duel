@@ -23,6 +23,36 @@ const SCREEN = {
   INVITE: 'invite',
 };
 
+function getJoinErrorText(payload, lang) {
+  const code = typeof payload === 'string' ? payload : (payload?.code || payload?.error);
+  const fee = payload?.requiredFee;
+  const messages = {
+    he: {
+      INSUFFICIENT_BALANCE: `אין מספיק קרדיטים${fee ? ` (צריך ${fee})` : ''}`,
+      ALREADY_IN_GAME: 'כבר היית בחדר. ניקינו את החדר, נסה שוב.',
+      USER_NOT_FOUND: 'משתמש לא נמצא',
+      NoRealPlayers: 'החדר נסגר כי לא נשארו שחקנים אמיתיים',
+      default: 'שגיאה בהצטרפות',
+    },
+    en: {
+      INSUFFICIENT_BALANCE: `Not enough credits${fee ? ` (need ${fee})` : ''}`,
+      ALREADY_IN_GAME: 'You were already in a room. The room was cleaned up, try again.',
+      USER_NOT_FOUND: 'User not found',
+      NoRealPlayers: 'The room closed because no real players remained',
+      default: 'Failed to join game',
+    },
+    ru: {
+      INSUFFICIENT_BALANCE: `Недостаточно кредитов${fee ? ` (нужно ${fee})` : ''}`,
+      ALREADY_IN_GAME: 'Ты уже был в комнате. Комната очищена, попробуй ещё раз.',
+      USER_NOT_FOUND: 'Пользователь не найден',
+      NoRealPlayers: 'Комната закрыта: не осталось реальных игроков',
+      default: 'Ошибка входа в игру',
+    },
+  };
+  const dict = messages[lang] || messages.en;
+  return dict[code] || payload?.message || payload?.error || dict.default;
+}
+
 export default function App() {
   const { emit, on, connected, socket } = useSocket();
 
@@ -111,7 +141,6 @@ export default function App() {
       setScreen(SCREEN.GAME);
     });
     const offNoActiveGame = on('no_active_game', () => {});
-
     const offTimerPaused = on('turn_timer_paused', () => {});
     const offTimerResumed = on('turn_timer_resumed', () => {});
 
@@ -131,9 +160,9 @@ export default function App() {
       }
       setScreen(SCREEN.WAITING);
     });
-    const offJoinErr = on('join_error', ({ error }) => {
+    const offJoinErr = on('join_error', (payload) => {
       setJoining(false);
-      setJoinError(error);
+      setJoinError(getJoinErrorText(payload, lang));
     });
 
     const offPlayerJoined = on('player_joined', ({ players, pot }) => {
@@ -188,11 +217,8 @@ export default function App() {
       setRolling(false);
       setLastRoll({ userId, firstName, diceResult, isEliminated });
       setActivePlayers(remainingPlayers);
-      if (updatedPlayers) {
-        setPlayers(updatedPlayers);
-      } else {
-        setPlayers(prev => prev.map(p => p.user_id === userId && isEliminated ? { ...p, status: 'eliminated' } : p));
-      }
+      if (updatedPlayers) setPlayers(updatedPlayers);
+      else setPlayers(prev => prev.map(p => p.user_id === userId && isEliminated ? { ...p, status: 'eliminated' } : p));
     });
     const offRollErr = on('roll_error', ({ error }) => {
       setRolling(false);
@@ -227,7 +253,7 @@ export default function App() {
     });
     const offGameCancelled = on('game_cancelled', ({ reason }) => {
       setScreen(SCREEN.LOBBY);
-      setJoinError(reason);
+      setJoinError(getJoinErrorText({ code: reason === 'No real players' ? 'NoRealPlayers' : reason }, lang));
     });
 
     const offSnapshot = on('game_snapshot', ({ game, players, activePlayers, currentPlayer, started, turnSecondsLeft, reconnectSecondsLeft }) => {
@@ -255,7 +281,7 @@ export default function App() {
       offNextTurn(); offPlayerDisconnected(); offReconnectTick(); offPlayerAbandoned(); offPlayerReconnected();
       offGameOver(); offGameCancelled(); offSnapshot(); offBalance();
     };
-  }, [on, resetGameState, socket]);
+  }, [on, resetGameState, socket, lang]);
 
   const handleJoinGame = useCallback(() => {
     setJoining(true);
@@ -293,21 +319,12 @@ export default function App() {
   ) : null;
 
   if (screen === SCREEN.SPLASH) return <>{ReferralToast}<SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} /></>;
-
   if (screen === SCREEN.INVITE) return <InviteScreen lang={lang} onLangChange={handleLangChange} user={user} onBack={() => setScreen(SCREEN.LOBBY)} onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)} />;
-
   if (screen === SCREEN.PRIZES) return <PrizesScreen lang={lang} onLangChange={handleLangChange} user={user} onBack={() => setScreen(SCREEN.LOBBY)} onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)} />;
-
   if (screen === SCREEN.LEADERBOARD) return <LeaderboardScreen lang={lang} onLangChange={handleLangChange} onBack={() => setScreen(SCREEN.LOBBY)} myTelegramId={user?.telegram_id} />;
-
   if (screen === SCREEN.LOBBY) return <LobbyScreen lang={lang} onLangChange={handleLangChange} user={user} onJoin={handleJoinGame} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} onPrizes={() => setScreen(SCREEN.PRIZES)} onInvite={() => setScreen(SCREEN.INVITE)} onBack={() => setScreen(SCREEN.SPLASH)} loading={joining} error={joinError} selectedFee={selectedFee} onFeeChange={setSelectedFee} />;
-
   if (screen === SCREEN.WAITING) return <WaitingRoomScreen lang={lang} onLangChange={handleLangChange} game={game} players={players} myUserId={user?.id} countdown={countdown} countdownActive={countdownActive} onLeave={handleLeaveGame} readyPlayers={readyPlayers} onToggleReady={handleToggleReady} />;
-
-  if (screen === SCREEN.GAME) return <>{
-    <GameScreen lang={lang} game={game} players={players} activePlayers={activePlayers} currentPlayer={currentPlayer} myUserId={user?.id} lastRoll={lastRoll} onRoll={handleRoll} rolling={rolling} rollError={rollError} turnSecondsLeft={turnSecondsLeft} disconnectedPlayer={disconnectedPlayer} onLeaveAfterElimination={handleLeaveActiveGame} />
-  }{myReconnectSeconds !== null && <ReconnectScreen lang={lang} secondsLeft={myReconnectSeconds} onReturn={handleReturnToGame} onGiveUp={handleReconnectExit} />}</>;
-
+  if (screen === SCREEN.GAME) return <>{<GameScreen lang={lang} game={game} players={players} activePlayers={activePlayers} currentPlayer={currentPlayer} myUserId={user?.id} lastRoll={lastRoll} onRoll={handleRoll} rolling={rolling} rollError={rollError} turnSecondsLeft={turnSecondsLeft} disconnectedPlayer={disconnectedPlayer} onLeaveAfterElimination={handleLeaveActiveGame} />}{myReconnectSeconds !== null && <ReconnectScreen lang={lang} secondsLeft={myReconnectSeconds} onReturn={handleReturnToGame} onGiveUp={handleReconnectExit} />}</>;
   if (screen === SCREEN.RESULT) return <ResultScreen lang={lang} winner={gameResult?.winner} pot={gameResult?.pot} prize={gameResult?.prize} houseCut={gameResult?.houseCut} myUserId={user?.id} onPlayAgain={handlePlayAgain} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} />;
 
   return null;
