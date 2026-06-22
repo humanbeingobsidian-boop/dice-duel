@@ -10,6 +10,12 @@ SESSION  = os.environ.get("TELEGRAM_SESSION", "")
 SECRET   = os.environ.get("USERBOT_SECRET", "userbot_secret")
 PORT     = int(os.environ.get("USERBOT_PORT", "3002"))
 
+# Optional profile settings for the Telegram user account that sends prize messages.
+# Set these in Render Environment Variables. USERBOT_USERNAME must be without @.
+USERBOT_FIRST_NAME = os.environ.get("USERBOT_FIRST_NAME", "").strip()
+USERBOT_LAST_NAME  = os.environ.get("USERBOT_LAST_NAME", "").strip()
+USERBOT_USERNAME   = os.environ.get("USERBOT_USERNAME", "").strip().lstrip("@")
+
 if not all([API_ID, API_HASH, SESSION]):
     print("⚠️  Userbot env vars not set — skipping")
     exit(0)
@@ -20,6 +26,31 @@ app_tg = Client(
     api_hash=API_HASH,
     session_string=SESSION,
 )
+
+async def sync_userbot_profile():
+    """Update the Telegram account profile from environment variables.
+
+    This changes the real Telegram account connected by TELEGRAM_SESSION.
+    Telegram may reject unavailable usernames, invalid usernames, or frequent changes.
+    """
+    me = await app_tg.get_me()
+
+    if USERBOT_FIRST_NAME or USERBOT_LAST_NAME:
+        try:
+            await app_tg.update_profile(
+                first_name=USERBOT_FIRST_NAME or me.first_name or "Dice Duel",
+                last_name=USERBOT_LAST_NAME or "",
+            )
+            print(f"✅ Userbot display name set to: {USERBOT_FIRST_NAME or me.first_name} {USERBOT_LAST_NAME}".strip())
+        except Exception as e:
+            print(f"⚠️  Failed to update userbot display name: {e}")
+
+    if USERBOT_USERNAME and USERBOT_USERNAME != (me.username or ""):
+        try:
+            await app_tg.set_username(USERBOT_USERNAME)
+            print(f"✅ Userbot username set to: @{USERBOT_USERNAME}")
+        except Exception as e:
+            print(f"⚠️  Failed to update userbot username @{USERBOT_USERNAME}: {e}")
 
 # ─── HTTP endpoint שה-backend קורא לו ──────────────────────────────────────
 async def send_prize(request):
@@ -59,8 +90,10 @@ async def health(request):
 async def main():
     print("🤖 Userbot starting...")
     await app_tg.start()
+    await sync_userbot_profile()
     me = await app_tg.get_me()
-    print(f"✅ Userbot connected as: {me.first_name} (ID: {me.id})")
+    username = f"@{me.username}" if me.username else "no username"
+    print(f"✅ Userbot connected as: {me.first_name} ({username}, ID: {me.id})")
 
     # הפעל HTTP server
     web_app = web.Application()
