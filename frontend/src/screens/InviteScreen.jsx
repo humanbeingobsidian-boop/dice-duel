@@ -1,10 +1,11 @@
 // frontend/src/screens/InviteScreen.jsx
 import React, { useState, useEffect } from 'react';
 import { getInitData, haptic, hapticNotification, getStartAppParam } from '../utils/telegram';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
-export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdate }) {
+export default function InviteScreen({ user, lang = 'he', onLangChange, onBack, onBalanceUpdate }) {
   const [myCode, setMyCode] = useState(null);
   const [inputCode, setInputCode] = useState('');
   const [loading, setLoading] = useState(true);
@@ -160,12 +161,8 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
     const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'DuelDiceBot';
     const APP_NAME = import.meta.env.VITE_APP_NAME || 'earn';
 
-    // Deep link that opens Mini App with the invite code pre-filled
     const inviteLink = `https://t.me/${BOT_USERNAME}/${APP_NAME}?startapp=${myCode}`;
-
     const shareText = s.shareText(myCode, inviteLink);
-
-    // Opens Telegram "Forward to..." dialog
     const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`;
 
     if (window.Telegram?.WebApp?.openTelegramLink) {
@@ -183,16 +180,19 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
     <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '4px' }}>
-        <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '14px' }} onClick={onBack}>
-          {s.back}
-        </button>
-        <div>
-          <h2 style={{ fontSize: '20px', fontWeight: 700 }}>{s.title}</h2>
-          <div style={{ fontSize: '12px', color: 'var(--text3)' }}>
-            {s.balance}: <span style={{ color: 'var(--gold2)', fontWeight: 700 }}>{user?.balance ?? 0}</span> {s.credits}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', paddingTop: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+          <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '14px' }} onClick={onBack}>
+            {s.back}
+          </button>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 700 }}>{s.title}</h2>
+            <div style={{ fontSize: '12px', color: 'var(--text3)' }}>
+              {s.balance}: <span style={{ color: 'var(--gold2)', fontWeight: 700 }}>{user?.balance ?? 0}</span> {s.credits}
+            </div>
           </div>
         </div>
+        <LanguageSwitcher lang={lang} onChange={onLangChange} />
       </div>
 
       {/* My code */}
@@ -208,7 +208,6 @@ export default function InviteScreen({ user, lang = 'he', onBack, onBalanceUpdat
           <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text3)' }}>...</div>
         ) : (
           <>
-            {/* Code display — tap to copy */}
             <div
               onClick={handleCopy}
               style={{
