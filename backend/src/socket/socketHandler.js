@@ -1,6 +1,9 @@
 // backend/src/socket/socketHandler.js
 const { validateTelegramData } = require('../middleware/telegramAuth');
-const { upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId } = require('../db/queries');
+const {
+  upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId,
+  getGameByRoomCode, getGamePlayers, updateGameStatus,
+} = require('../db/queries');
 const {
   joinGame, leaveWaitingRoom, leaveActiveGame, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect, getRoomSnapshot,
@@ -11,7 +14,6 @@ module.exports = function setupSocket(io) {
     console.log(`🔌 Socket connected: ${socket.id}`);
     let authenticatedUser = null;
 
-    // ─── Auth ──────────────────────────────────────────────────────────────
     socket.on('authenticate', async ({ initData, referralCode }) => {
       try {
         let telegramUser;
@@ -24,8 +26,6 @@ module.exports = function setupSocket(io) {
         }
 
         const isNewUser = !getUserByTelegramId.get(String(telegramUser.id));
-
-        // Upsert — with referral on first join
         let dbUser;
         if (isNewUser && referralCode && referralCode !== String(telegramUser.id)) {
           dbUser = upsertUserWithReferral({
@@ -34,11 +34,9 @@ module.exports = function setupSocket(io) {
             first_name: telegramUser.first_name || 'Player',
             referred_by: referralCode,
           });
-          // Pay referrer 5 credits
           const referrer = payReferralBonus(dbUser.id, referralCode);
           if (referrer) {
             console.log(`🎁 Referral bonus: +5 credits to ${referrer.first_name} for inviting ${dbUser.first_name}`);
-            // Notify referrer if they're online (best-effort)
             io.emit(`referral_bonus_${referralCode}`, {
               newUser: dbUser.first_name,
               bonus: 5,
@@ -62,33 +60,17 @@ module.exports = function setupSocket(io) {
       }
     });
 
-    // ─── Join Game ─────────────────────────────────────────────────────────
     socket.on('join_game', ({ entryFee = 100 } = {}) => {
       if (!authenticatedUser) return socket.emit('error', { error: 'Not authenticated' });
       const fee = [5, 100].includes(Number(entryFee)) ? Number(entryFee) : 100;
       try {
-        const result = joinGame(authenticatedUser.telegramUser, io, fee);
-        const roomCode = result.game.room_code;
-        socket.join(roomCode);
-        socket.roomCode = roomCode;
-        socket.userId = authenticatedUser.dbUser.id;
-        socket.emit('joined_game', {
-          game: result.game, players: result.players, user: result.user, roomCode,
-          countdownActive: result.countdownActive,
-          countdownSecondsLeft: result.countdownSecondsLeft,
-        });
-        console.log(`👤 ${authenticatedUser.dbUser.first_name} joined room ${roomCode} (fee:${fee})`);
+        const result = joinGameWithStaleRetry(socket, authenticatedUser, io, fee);
+        console.log(`👤 ${authenticatedUser.dbUser.first_name} joined room ${result.game.room_code} (fee:${fee})`);
       } catch (err) {
-        const msgs = {
-          INSUFFICIENT_BALANCE: `אין מספיק קרדיטים (צריך ${fee})`,
-          ALREADY_IN_GAME: 'אתה כבר בחדר זה',
-          USER_NOT_FOUND: 'משתמש לא נמצא',
-        };
-        socket.emit('join_error', { error: msgs[err.message] || 'שגיאה בהצטרפות' });
+        socket.emit('join_error', { code: err.message, requiredFee: fee });
       }
     });
 
-    // ─── Toggle Ready ───────────────────────────────────────────────────────
     socket.on('toggle_ready', () => {
       if (!authenticatedUser || !socket.roomCode) return;
       try {
@@ -98,13 +80,11 @@ module.exports = function setupSocket(io) {
       }
     });
 
-    // ─── Leave Waiting Room ─────────────────────────────────────────────────
     socket.on('leave_game', () => {
       if (!authenticatedUser) return;
       _doLeaveWaiting(socket, authenticatedUser, io);
     });
 
-    // ─── Leave Active Game After Elimination ────────────────────────────────
     socket.on('leave_active_game', () => {
       if (!authenticatedUser || !socket.roomCode) return;
       try {
@@ -124,29 +104,22 @@ module.exports = function setupSocket(io) {
       }
     });
 
-    // ─── Reconnect to active game ───────────────────────────────────────────
     socket.on('reconnect_game', ({ roomCode }) => {
       if (!authenticatedUser || !roomCode) return;
-
       handleReconnect(authenticatedUser.telegramUser, roomCode, io);
-
       const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
       if (!snapshot) return socket.emit('error', { error: 'Game not found' });
-
       socket.join(roomCode);
       socket.roomCode = roomCode;
       socket.userId = authenticatedUser.dbUser.id;
-
       io.to(roomCode).emit('player_reconnected', {
         userId: authenticatedUser.dbUser.id,
         firstName: authenticatedUser.dbUser.first_name,
       });
-
       socket.emit('game_snapshot', { ...snapshot });
       console.log(`🔄 ${authenticatedUser.dbUser.first_name} reconnected to ${roomCode}`);
     });
 
-    // ─── Auto-reconnect: find active game for this user on authenticate ────
     socket.on('find_active_game', () => {
       if (!authenticatedUser) return;
       const { db } = require('../db/queries');
@@ -174,7 +147,6 @@ module.exports = function setupSocket(io) {
       }
     });
 
-    // ─── Roll Dice ─────────────────────────────────────────────────────────
     socket.on('roll_dice', () => {
       if (!authenticatedUser) return socket.emit('error', { error: 'Not authenticated' });
       if (!socket.roomCode) return socket.emit('error', { error: 'Not in a game room' });
@@ -194,11 +166,9 @@ module.exports = function setupSocket(io) {
       }
     });
 
-    // ─── Disconnect ─────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`🔌 Disconnected: ${socket.id}`);
       if (!authenticatedUser) return;
-
       if (socket.roomCode) {
         const leftWaiting = _doLeaveWaiting(socket, authenticatedUser, io);
         if (!leftWaiting) {
@@ -209,14 +179,49 @@ module.exports = function setupSocket(io) {
   });
 };
 
-// ─── Leave waiting room helper — returns true if succeeded ───────────────────
-function _doLeaveWaiting(socket, authenticatedUser, io) {
+function joinGameWithStaleRetry(socket, authenticatedUser, io, fee) {
+  try {
+    return _joinAndAttach(socket, authenticatedUser, io, fee);
+  } catch (err) {
+    if (err.message !== 'ALREADY_IN_GAME') throw err;
+    _doLeaveWaiting(socket, authenticatedUser, io, { silent: true });
+    return _joinAndAttach(socket, authenticatedUser, io, fee);
+  }
+}
+
+function _joinAndAttach(socket, authenticatedUser, io, fee) {
+  const result = joinGame(authenticatedUser.telegramUser, io, fee);
+  const roomCode = result.game.room_code;
+  socket.join(roomCode);
+  socket.roomCode = roomCode;
+  socket.userId = authenticatedUser.dbUser.id;
+  socket.emit('joined_game', {
+    game: result.game,
+    players: result.players,
+    user: result.user,
+    roomCode,
+    countdownActive: result.countdownActive,
+    countdownSecondsLeft: result.countdownSecondsLeft,
+  });
+  return result;
+}
+
+function closeEmptyWaitingRoom(roomCode) {
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'waiting') return;
+  const realPlayers = getGamePlayers.all(game.id);
+  if (realPlayers.length > 0) return;
+  updateGameStatus.run({ status: 'finished', id: game.id });
+}
+
+function _doLeaveWaiting(socket, authenticatedUser, io, options = {}) {
   try {
     const result = leaveWaitingRoom(authenticatedUser.telegramUser, io);
     socket.leave(result.roomCode);
     socket.roomCode = null;
+    closeEmptyWaitingRoom(result.roomCode);
     const freshUser = getUserByTelegramId.get(String(authenticatedUser.telegramUser.id));
-    socket.emit('left_game', { balance: freshUser.balance });
+    if (!options.silent) socket.emit('left_game', { balance: freshUser.balance });
     console.log(`👋 ${authenticatedUser.dbUser.first_name} left waiting room ${result.roomCode}, balance: ${freshUser.balance}`);
     return true;
   } catch (err) {
