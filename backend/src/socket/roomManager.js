@@ -11,7 +11,6 @@ const {
 const { db } = require('../db/queries');
 const { createBotPlayer, randomBotCount } = require('./botPlayers');
 
-// ─── In-memory state ──────────────────────────────────────────────────────────
 const rooms = new Map();
 
 function generateRoomCode() {
@@ -23,7 +22,12 @@ function rollDice() {
 }
 
 function shufflePlayers(players) {
-  return [...players].sort(() => Math.random() - 0.5);
+  const shuffled = [...players];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
 }
 
 function sanitizePlayer(player) {
@@ -34,27 +38,6 @@ function sanitizePlayer(player) {
 
 function sanitizePlayers(players = []) {
   return players.map(sanitizePlayer);
-}
-
-function getOrCreateWaitingRoom(entryFee = 100) {
-  const game = db.prepare(`
-    SELECT g.*, COUNT(gp.id) as player_count
-    FROM games g
-    LEFT JOIN game_players gp ON gp.game_id = g.id AND gp.status = 'active'
-    WHERE g.status = 'waiting' AND g.entry_fee = ?
-    GROUP BY g.id
-    HAVING player_count < g.max_players
-    ORDER BY g.created_at ASC
-    LIMIT 1
-  `).get(entryFee);
-
-  if (game) return { game };
-
-  let roomCode;
-  do { roomCode = generateRoomCode(); }
-  while (getGameByRoomCode.get(roomCode));
-  const newGame = createGame.get({ room_code: roomCode, entry_fee: entryFee, house_fee_percent: 10, max_players: 6 });
-  return { game: newGame };
 }
 
 function ensureRoomState(roomCode) {
@@ -80,15 +63,40 @@ function ensureRoomState(roomCode) {
 }
 
 function clearTimer(roomState) {
-  if (roomState.timer) { clearInterval(roomState.timer); roomState.timer = null; }
+  if (roomState?.timer) {
+    clearInterval(roomState.timer);
+    roomState.timer = null;
+  }
 }
 
 function clearTurnTimer(roomState) {
-  if (roomState.turnTimer) { clearInterval(roomState.turnTimer); roomState.turnTimer = null; }
+  if (roomState?.turnTimer) {
+    clearInterval(roomState.turnTimer);
+    roomState.turnTimer = null;
+  }
 }
 
 function clearFastStartTimer(roomState) {
-  if (roomState.fastStartTimer) { clearTimeout(roomState.fastStartTimer); roomState.fastStartTimer = null; }
+  if (roomState?.fastStartTimer) {
+    clearTimeout(roomState.fastStartTimer);
+    roomState.fastStartTimer = null;
+  }
+}
+
+function clearRoomRuntime(roomState) {
+  if (!roomState) return;
+  clearTimer(roomState);
+  clearTurnTimer(roomState);
+  clearFastStartTimer(roomState);
+  for (const timer of roomState.reconnectTimers.values()) {
+    clearTimeout(timer);
+    clearInterval(timer);
+  }
+  roomState.reconnectTimers.clear();
+  roomState.reconnectSecondsLeft.clear();
+  roomState.readyPlayers.clear();
+  roomState.botPlayers = [];
+  roomState.playerOrder = null;
 }
 
 function buildMergedPlayers(realPlayers, botPlayers) {
@@ -135,11 +143,82 @@ function getDisplayPlayers(game, roomState) {
   return allPlayers;
 }
 
-function emitPlayers(roomCode, io, game) {
+function getOrCreateWaitingRoom(entryFee = 100) {
+  const game = db.prepare(`
+    SELECT g.*, COUNT(gp.id) as player_count
+    FROM games g
+    LEFT JOIN game_players gp ON gp.game_id = g.id AND gp.status = 'active'
+    WHERE g.status = 'waiting' AND g.entry_fee = ?
+    GROUP BY g.id
+    HAVING player_count < g.max_players
+    ORDER BY g.created_at ASC
+    LIMIT 1
+  `).get(entryFee);
+
+  if (game) return { game };
+
+  let roomCode;
+  do { roomCode = generateRoomCode(); }
+  while (getGameByRoomCode.get(roomCode));
+
+  const newGame = createGame.get({ room_code: roomCode, entry_fee: entryFee, house_fee_percent: 10, max_players: 6 });
+  return { game: newGame };
+}
+
+function closeWaitingRoom(roomCode, game, io, reason = 'No real players') {
+  const roomState = rooms.get(roomCode);
+  clearRoomRuntime(roomState);
+  db.prepare('DELETE FROM game_players WHERE game_id = ?').run(game.id);
+  db.prepare('UPDATE games SET pot = 0 WHERE id = ?').run(game.id);
+  updateGameStatus.run({ status: 'finished', id: game.id });
+  io.to(roomCode).emit('countdown_stopped', {});
+  io.to(roomCode).emit('game_cancelled', { reason });
+  rooms.delete(roomCode);
+}
+
+function closeIfNoRealPlayers(roomCode, game, io) {
+  const realPlayers = getGamePlayers.all(game.id);
+  if (realPlayers.length > 0) return false;
+  closeWaitingRoom(roomCode, game, io, 'No real players');
+  return true;
+}
+
+function cleanupExistingWaitingMembership(userId, io) {
+  const rows = db.prepare(`
+    SELECT g.* FROM games g
+    JOIN game_players gp ON gp.game_id = g.id
+    WHERE g.status = 'waiting' AND gp.user_id = ?
+  `).all(userId);
+
+  for (const row of rows) {
+    const removed = leaveGameTransaction(userId, row.id, row.entry_fee);
+    if (!removed) continue;
+
+    const freshGame = getGameById.get(row.id);
+    const remainingRealPlayers = getGamePlayers.all(row.id);
+    const roomState = rooms.get(row.room_code);
+
+    if (remainingRealPlayers.length === 0) {
+      closeWaitingRoom(row.room_code, freshGame, io, 'No real players');
+      continue;
+    }
+
+    if (roomState) roomState.readyPlayers.delete(userId);
+    const players = roomState ? getDisplayPlayers(freshGame, roomState) : remainingRealPlayers;
+    io.to(row.room_code).emit('player_left', {
+      userId,
+      players: sanitizePlayers(players),
+      pot: freshGame.pot,
+      playerCount: players.filter(p => p.status === 'active').length,
+    });
+  }
+}
+
+function emitPlayers(roomCode, io, game, eventName = 'player_joined') {
   const roomState = ensureRoomState(roomCode);
   const freshGame = getGameById.get(game.id);
   const players = getDisplayPlayers(freshGame, roomState);
-  io.to(roomCode).emit('player_joined', {
+  io.to(roomCode).emit(eventName, {
     players: sanitizePlayers(players),
     pot: freshGame.pot,
     playerCount: players.filter(p => p.status === 'active').length,
@@ -168,7 +247,7 @@ function removeOneWaitingBotForRealPlayer(roomCode, game, io) {
 
   const [bot] = roomState.botPlayers.splice(index, 1);
   roomState.readyPlayers.delete(bot.id);
-  db.prepare(`UPDATE games SET pot = MAX(0, pot - ?) WHERE id = ?`).run(game.entry_fee, game.id);
+  db.prepare('UPDATE games SET pot = MAX(0, pot - ?) WHERE id = ?').run(game.entry_fee, game.id);
 
   const freshGame = getGameById.get(game.id);
   const players = getDisplayPlayers(freshGame, roomState);
@@ -185,6 +264,8 @@ function removeOneWaitingBotForRealPlayer(roomCode, game, io) {
 function maybeStartIfAllReady(roomCode, io, game) {
   const roomState = ensureRoomState(roomCode);
   if (roomState.started) return false;
+  if (closeIfNoRealPlayers(roomCode, game, io)) return false;
+
   const { activePlayers, readyCount } = emitReady(roomCode, io, game);
   if (activePlayers.length >= 2 && readyCount === activePlayers.length) {
     clearTimer(roomState);
@@ -195,32 +276,24 @@ function maybeStartIfAllReady(roomCode, io, game) {
     roomState.fastStartTimer = setTimeout(() => startGame(roomCode, io), delay);
     return true;
   }
+
   clearFastStartTimer(roomState);
   return false;
 }
 
-// ─── JOIN ─────────────────────────────────────────────────────────────────────
 function joinGame(telegramUser, io, entryFee = 100) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) throw new Error('USER_NOT_FOUND');
   if (dbUser.balance < entryFee) throw new Error('INSUFFICIENT_BALANCE');
 
-  const { game } = getOrCreateWaitingRoom(entryFee);
-  const alreadyInActiveGame = db.prepare(`
-    SELECT 1 FROM game_players gp
-    JOIN games g ON g.id = gp.game_id
-    WHERE gp.user_id = ? AND g.status = 'waiting'
-  `).get(dbUser.id);
-  if (alreadyInActiveGame) throw new Error('ALREADY_IN_GAME');
+  cleanupExistingWaitingMembership(dbUser.id, io);
 
+  const { game } = getOrCreateWaitingRoom(entryFee);
   const currentPlayers = getGamePlayers.all(game.id);
   joinGameTransaction(dbUser.id, game.id, game.entry_fee, currentPlayers.length);
 
-  const updatedGame = getGameById.get(game.id);
   const roomState = ensureRoomState(game.room_code);
-
-  // Prefer real players over bots. When a new real player joins an occupied bot room,
-  // remove one active bot and subtract its virtual entry fee from the pot.
+  const updatedGame = getGameById.get(game.id);
   removeOneWaitingBotForRealPlayer(game.room_code, updatedGame, io);
 
   const freshGame = getGameById.get(game.id);
@@ -232,10 +305,7 @@ function joinGame(telegramUser, io, entryFee = 100) {
     playerCount: allPlayersWithBots.filter(p => p.status === 'active').length,
   });
 
-  // Timer now starts as soon as the first real player enters.
-  if (!roomState.timer && !roomState.started) {
-    startCountdown(game.room_code, io);
-  }
+  if (!roomState.timer && !roomState.started) startCountdown(game.room_code, io);
 
   scheduleBotJoins(game.room_code, game.entry_fee, io);
 
@@ -254,50 +324,12 @@ function joinGame(telegramUser, io, entryFee = 100) {
   };
 }
 
-// ─── PUSH NOTIFICATION ───────────────────────────────────────────────────────
-async function sendPushToWaitingPlayers(roomCode, entryFee) {
-  const BOT_TOKEN = process.env.BOT_TOKEN;
-  if (!BOT_TOKEN) return;
-
-  const game = getGameByRoomCode.get(roomCode);
-  if (!game || game.status !== 'waiting') return;
-
-  const players = getGamePlayers.all(game.id);
-  const tableType = entryFee >= 100 ? '💎 הימור גבוה' : '🎲 הימור נמוך';
-  const MINI_APP_URL = process.env.MINI_APP_URL || '';
-
-  for (const player of players) {
-    try {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: player.telegram_id,
-          text:
-            `🎲 *יש שחקנים שממתינים!*\n\n` +
-            `שולחן: ${tableType}\n` +
-            `חזור למשחק ותתחיל לשחק! 🏆`,
-          parse_mode: 'Markdown',
-          reply_markup: MINI_APP_URL ? {
-            inline_keyboard: [[{
-              text: '🎲 חזור למשחק',
-              web_app: { url: MINI_APP_URL },
-            }]],
-          } : undefined,
-        }),
-      });
-    } catch {}
-  }
-}
-
-// ─── BOT JOINS ───────────────────────────────────────────────────────────────
 function scheduleBotJoins(roomCode, entryFee, io) {
   const roomState = ensureRoomState(roomCode);
-  if (roomState.started) return;
-  if (roomState.botsScheduled) return;
+  if (roomState.started || roomState.botsScheduled) return;
   roomState.botsScheduled = true;
 
-  const botCount = randomBotCount(); // 1-4
+  const botCount = randomBotCount();
   let delay = 3000;
 
   for (let i = 0; i < botCount; i++) {
@@ -307,29 +339,27 @@ function scheduleBotJoins(roomCode, entryFee, io) {
       if (roomState.started) return;
 
       const realPlayers = getGamePlayers.all(currentGame.id);
+      if (realPlayers.length === 0) {
+        closeWaitingRoom(roomCode, currentGame, io, 'No real players');
+        return;
+      }
+
       const totalCount = realPlayers.length + roomState.botPlayers.filter(b => b.status === 'active').length;
       if (totalCount >= currentGame.max_players) return;
 
       const bot = createBotPlayer();
-      roomState.botPlayers.push({
-        ...bot,
-        seat_order: totalCount,
-        status: 'active',
-      });
+      roomState.botPlayers.push({ ...bot, seat_order: totalCount, status: 'active' });
       roomState.readyPlayers.add(bot.id);
 
-      db.prepare(`UPDATE games SET pot = pot + ? WHERE id = ?`).run(currentGame.entry_fee, currentGame.id);
+      db.prepare('UPDATE games SET pot = pot + ? WHERE id = ?').run(currentGame.entry_fee, currentGame.id);
       emitPlayers(roomCode, io, currentGame);
       maybeStartIfAllReady(roomCode, io, currentGame);
-
-      console.log(`Room ${roomCode}: ${totalCount + 1}/${currentGame.max_players} players`);
     }, delay);
 
     delay += Math.floor(Math.random() * 2000) + 1000;
   }
 }
 
-// ─── LEAVE WAITING ROOM ───────────────────────────────────────────────────────
 function leaveWaitingRoom(telegramUser, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) throw new Error('USER_NOT_FOUND');
@@ -343,23 +373,18 @@ function leaveWaitingRoom(telegramUser, io) {
 
   leaveGameTransaction(dbUser.id, row.id, row.entry_fee);
 
-  const remainingRealPlayers = getGamePlayers.all(row.id);
-  const updatedGame = getGameById.get(row.id);
+  const freshGame = getGameById.get(row.id);
   const roomState = rooms.get(row.room_code);
+  if (roomState) roomState.readyPlayers.delete(dbUser.id);
 
-  if (roomState && remainingRealPlayers.length === 0) {
-    clearTimer(roomState);
-    clearFastStartTimer(roomState);
-    roomState.readyPlayers.clear();
-    roomState.botPlayers = [];
-    db.prepare(`UPDATE games SET pot = 0 WHERE id = ?`).run(row.id);
-    io.to(row.room_code).emit('countdown_stopped', {});
-  } else if (roomState && !roomState.timer && !roomState.started) {
-    clearFastStartTimer(roomState);
-    startCountdown(row.room_code, io);
+  const remainingRealPlayers = getGamePlayers.all(row.id);
+  if (remainingRealPlayers.length === 0) {
+    closeWaitingRoom(row.room_code, freshGame, io, 'No real players');
+    return { user: dbUser, roomCode: row.room_code, refunded: row.entry_fee };
   }
 
-  const freshGame = getGameById.get(row.id);
+  if (roomState) clearFastStartTimer(roomState);
+
   const players = roomState ? getDisplayPlayers(freshGame, roomState) : remainingRealPlayers;
   io.to(row.room_code).emit('player_left', {
     userId: dbUser.id,
@@ -372,7 +397,6 @@ function leaveWaitingRoom(telegramUser, io) {
   return { user: dbUser, roomCode: row.room_code, refunded: row.entry_fee };
 }
 
-// ─── LEAVE ACTIVE GAME AFTER ELIMINATION ─────────────────────────────────────
 function leaveActiveGame(telegramUser, roomCode) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) throw new Error('USER_NOT_FOUND');
@@ -380,38 +404,231 @@ function leaveActiveGame(telegramUser, roomCode) {
   const game = getGameByRoomCode.get(roomCode);
   if (!game || game.status !== 'active') throw new Error('GAME_NOT_ACTIVE');
 
-  const player = db.prepare(`
-    SELECT status FROM game_players WHERE game_id = ? AND user_id = ? LIMIT 1
-  `).get(game.id, dbUser.id);
-
+  const player = db.prepare('SELECT status FROM game_players WHERE game_id = ? AND user_id = ? LIMIT 1').get(game.id, dbUser.id);
   if (!player) throw new Error('NOT_IN_GAME');
   if (player.status !== 'eliminated') throw new Error('NOT_ELIMINATED');
 
   return { user: dbUser, roomCode };
 }
 
-// ─── READY TOGGLE ────────────────────────────────────────────────────────────
 function toggleReady(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) throw new Error('USER_NOT_FOUND');
 
   const game = getGameByRoomCode.get(roomCode);
   if (!game || game.status !== 'waiting') throw new Error('NOT_IN_WAITING_ROOM');
+  if (closeIfNoRealPlayers(roomCode, game, io)) return { isReady: false, readyUserIds: [] };
 
   const roomState = ensureRoomState(roomCode);
-  const userId = dbUser.id;
-
-  if (roomState.readyPlayers.has(userId)) {
-    roomState.readyPlayers.delete(userId);
-  } else {
-    roomState.readyPlayers.add(userId);
-  }
+  if (roomState.readyPlayers.has(dbUser.id)) roomState.readyPlayers.delete(dbUser.id);
+  else roomState.readyPlayers.add(dbUser.id);
 
   maybeStartIfAllReady(roomCode, io, game);
-  return { isReady: roomState.readyPlayers.has(userId), readyUserIds: Array.from(roomState.readyPlayers) };
+  return { isReady: roomState.readyPlayers.has(dbUser.id), readyUserIds: Array.from(roomState.readyPlayers) };
 }
 
-// ─── DISCONNECT ───────────────────────────────────────────────────────────────
+function startCountdown(roomCode, io) {
+  const roomState = ensureRoomState(roomCode);
+  clearTimer(roomState);
+
+  let secondsLeft = roomState.countdownSecondsLeft > 0 ? roomState.countdownSecondsLeft : 60;
+  roomState.countdownSecondsLeft = secondsLeft;
+  io.to(roomCode).emit('countdown_started', { secondsLeft });
+
+  roomState.timer = setInterval(() => {
+    secondsLeft--;
+    roomState.countdownSecondsLeft = secondsLeft;
+    io.to(roomCode).emit('countdown_tick', { secondsLeft });
+    if (secondsLeft <= 0) {
+      clearTimer(roomState);
+      const game = getGameByRoomCode.get(roomCode);
+      if (!game || game.status !== 'waiting') return;
+      if (closeIfNoRealPlayers(roomCode, game, io)) return;
+      startGame(roomCode, io);
+    }
+  }, 1000);
+}
+
+function startGame(roomCode, io) {
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'waiting') return;
+
+  const roomState = ensureRoomState(roomCode);
+  clearFastStartTimer(roomState);
+
+  const realPlayers = getActivePlayers.all(game.id);
+  if (realPlayers.length === 0) {
+    closeWaitingRoom(roomCode, game, io, 'No real players');
+    return;
+  }
+
+  const allPlayers = getAllActivePlayers(game, roomState);
+  if (allPlayers.length < 2) {
+    io.to(roomCode).emit('game_cancelled', { reason: 'Not enough players' });
+    return;
+  }
+
+  roomState.started = true;
+  roomState.currentPlayerIndex = 0;
+  updateGameStatus.run({ status: 'active', id: game.id });
+
+  const shuffled = shufflePlayers(allPlayers);
+  roomState.playerOrder = shuffled;
+
+  const freshGame = getGameById.get(game.id);
+  io.to(roomCode).emit('game_started', {
+    players: sanitizePlayers(shuffled),
+    currentPlayer: sanitizePlayer(shuffled[0]),
+    pot: freshGame.pot,
+  });
+
+  console.log(`🎮 Game ${roomCode} started — ${realPlayers.length} real + ${(roomState.botPlayers || []).filter(b => b.status === 'active').length} bots`);
+  startTurnTimer(roomCode, io);
+}
+
+function startTurnTimer(roomCode, io) {
+  const roomState = rooms.get(roomCode);
+  if (!roomState) return;
+
+  clearTurnTimer(roomState);
+  roomState.turnSecondsLeft = 10;
+  io.to(roomCode).emit('turn_timer_tick', { secondsLeft: 10 });
+
+  roomState.turnTimer = setInterval(() => {
+    roomState.turnSecondsLeft--;
+    io.to(roomCode).emit('turn_timer_tick', { secondsLeft: roomState.turnSecondsLeft });
+
+    if (roomState.turnSecondsLeft <= 0) {
+      clearTurnTimer(roomState);
+      const game = getGameByRoomCode.get(roomCode);
+      if (!game || game.status !== 'active') return;
+      const allActive = getActiveSorted(game, roomState);
+      if (!allActive.length) return;
+      const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
+      if (!currentPlayer) return;
+      _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, game, roomState, io);
+    }
+  }, 1000);
+
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'active') return;
+  const allActive = getActiveSorted(game, roomState);
+  const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
+  const isBot = (roomState.botPlayers || []).some(b => b.id === currentPlayer?.user_id);
+  if (isBot) {
+    const delay = Math.floor(Math.random() * 3000) + 1000;
+    setTimeout(() => {
+      if (!roomState.turnTimer) return;
+      clearTurnTimer(roomState);
+      const freshGame = getGameByRoomCode.get(roomCode);
+      if (!freshGame || freshGame.status !== 'active') return;
+      _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, freshGame, roomState, io);
+    }, delay);
+  }
+}
+
+function rollDiceForPlayer(roomCode, telegramUserId, io) {
+  const game = getGameByRoomCode.get(roomCode);
+  if (!game || game.status !== 'active') throw new Error('GAME_NOT_ACTIVE');
+
+  const dbUser = getUserByTelegramId.get(String(telegramUserId));
+  if (!dbUser) throw new Error('USER_NOT_FOUND');
+
+  const roomState = rooms.get(roomCode);
+  if (!roomState) throw new Error('ROOM_NOT_FOUND');
+
+  const allActive = getActiveSorted(game, roomState);
+  if (!allActive.length) throw new Error('NO_ACTIVE_PLAYERS');
+
+  const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
+  if (!currentPlayer || currentPlayer.user_id !== dbUser.id) throw new Error('NOT_YOUR_TURN');
+
+  clearTurnTimer(roomState);
+  return _executeRoll(roomCode, dbUser.id, String(telegramUserId), dbUser.first_name, game, roomState, io);
+}
+
+function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, io) {
+  roomState.reconnectSecondsLeft.delete(userId);
+  const diceResult = rollDice();
+  const isEliminated = diceResult === 1;
+  const isBot = (roomState.botPlayers || []).some(b => b.id === userId);
+
+  if (!isBot) {
+    recordTurn.run({ game_id: game.id, user_id: userId, dice_result: diceResult, was_eliminated: isEliminated ? 1 : 0 });
+    if (isEliminated) eliminatePlayer.run({ game_id: game.id, user_id: userId });
+  } else if (isEliminated) {
+    const bot = roomState.botPlayers.find(b => b.id === userId);
+    if (bot) bot.status = 'eliminated';
+  }
+
+  const remainingPlayers = getActiveSorted(game, roomState);
+  const displayPlayers = getDisplayPlayers(game, roomState);
+
+  io.to(roomCode).emit('dice_rolled', {
+    userId,
+    telegramId,
+    firstName,
+    diceResult,
+    isEliminated,
+    remainingPlayers: sanitizePlayers(remainingPlayers),
+    players: sanitizePlayers(displayPlayers),
+  });
+
+  if (remainingPlayers.length <= 1) {
+    setTimeout(() => {
+      const freshGame = getGameByRoomCode.get(roomCode) || game;
+      if (remainingPlayers.length === 1) endGame(roomCode, remainingPlayers[0], freshGame, io);
+      else {
+        io.to(roomCode).emit('game_draw', {});
+        updateGameStatus.run({ status: 'finished', id: game.id });
+        clearRoomRuntime(roomState);
+        rooms.delete(roomCode);
+      }
+    }, 2500);
+    return { diceResult, isEliminated, gameOver: true };
+  }
+
+  if (!isEliminated) roomState.currentPlayerIndex = (roomState.currentPlayerIndex + 1) % remainingPlayers.length;
+  else roomState.currentPlayerIndex = roomState.currentPlayerIndex % remainingPlayers.length;
+
+  io.to(roomCode).emit('next_turn', {
+    currentPlayer: sanitizePlayer(remainingPlayers[roomState.currentPlayerIndex]),
+    remainingPlayers: sanitizePlayers(remainingPlayers),
+  });
+
+  startTurnTimer(roomCode, io);
+  return { diceResult, isEliminated, gameOver: false };
+}
+
+function endGame(roomCode, winner, game, io) {
+  const freshGame = getGameById.get(game.id);
+  if (!freshGame || freshGame.status === 'finished') return;
+
+  const pot = freshGame.pot;
+  const houseCut = Math.floor((pot * freshGame.house_fee_percent) / 100);
+  const prize = pot - houseCut;
+  const isBot = winner.isBot === true;
+
+  if (!isBot) finalizeGameTransaction(game.id, winner.user_id, prize, houseCut);
+  else updateGameStatus.run({ status: 'finished', id: game.id });
+
+  io.to(roomCode).emit('game_over', {
+    winner: {
+      userId: winner.user_id,
+      telegramId: winner.telegram_id,
+      firstName: winner.first_name,
+      username: winner.username || null,
+    },
+    pot,
+    prize,
+    houseCut,
+  });
+
+  const roomState = rooms.get(roomCode);
+  clearRoomRuntime(roomState);
+  rooms.delete(roomCode);
+}
+
 function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) return;
@@ -425,24 +642,12 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   clearTurnTimer(roomState);
   io.to(roomCode).emit('turn_timer_paused', { userId: dbUser.id });
 
-  if (roomState.reconnectTimers.has(dbUser.id)) {
-    clearTimeout(roomState.reconnectTimers.get(dbUser.id));
-    roomState.reconnectTimers.delete(dbUser.id);
-  }
+  if (roomState.reconnectTimers.has(dbUser.id)) clearTimeout(roomState.reconnectTimers.get(dbUser.id));
   const tickKey = `${dbUser.id}_tick`;
-  if (roomState.reconnectTimers.has(tickKey)) {
-    clearInterval(roomState.reconnectTimers.get(tickKey));
-    roomState.reconnectTimers.delete(tickKey);
-  }
+  if (roomState.reconnectTimers.has(tickKey)) clearInterval(roomState.reconnectTimers.get(tickKey));
 
-  const savedSeconds = roomState.reconnectSecondsLeft.get(dbUser.id);
-  let secondsLeft = (savedSeconds && savedSeconds > 0) ? savedSeconds : 30;
-
-  io.to(roomCode).emit('player_disconnected', {
-    userId: dbUser.id,
-    firstName: dbUser.first_name,
-    secondsLeft,
-  });
+  let secondsLeft = roomState.reconnectSecondsLeft.get(dbUser.id) || 30;
+  io.to(roomCode).emit('player_disconnected', { userId: dbUser.id, firstName: dbUser.first_name, secondsLeft });
 
   const tickInterval = setInterval(() => {
     secondsLeft--;
@@ -454,6 +659,7 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   const timeout = setTimeout(() => {
     clearInterval(tickInterval);
     roomState.reconnectTimers.delete(dbUser.id);
+    roomState.reconnectTimers.delete(tickKey);
     roomState.reconnectSecondsLeft.delete(dbUser.id);
 
     const freshGame = getGameByRoomCode.get(roomCode);
@@ -469,10 +675,10 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
       remainingPlayers: sanitizePlayers(remainingPlayers),
     });
 
-    if (remainingPlayers.length === 1) {
-      endGame(roomCode, remainingPlayers[0], freshGame, io);
-    } else if (remainingPlayers.length === 0) {
+    if (remainingPlayers.length === 1) endGame(roomCode, remainingPlayers[0], freshGame, io);
+    else if (remainingPlayers.length === 0) {
       updateGameStatus.run({ status: 'finished', id: game.id });
+      clearRoomRuntime(roomState);
       rooms.delete(roomCode);
     } else {
       roomState.currentPlayerIndex = roomState.currentPlayerIndex % remainingPlayers.length;
@@ -484,7 +690,6 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   roomState.reconnectTimers.set(tickKey, tickInterval);
 }
 
-// ─── RECONNECT ────────────────────────────────────────────────────────────────
 function handleReconnect(telegramUser, roomCode, io) {
   const dbUser = getUserByTelegramId.get(String(telegramUser.id));
   if (!dbUser) return false;
@@ -501,6 +706,7 @@ function handleReconnect(telegramUser, roomCode, io) {
     clearInterval(roomState.reconnectTimers.get(tickKey));
     roomState.reconnectTimers.delete(tickKey);
   }
+  roomState.reconnectSecondsLeft.delete(dbUser.id);
 
   const game = getGameByRoomCode.get(roomCode);
   if (game && game.status === 'active' && !roomState.turnTimer) {
@@ -511,65 +717,34 @@ function handleReconnect(telegramUser, roomCode, io) {
   return true;
 }
 
-function clearReconnectSeconds(userId, roomCode) {
-  const roomState = rooms.get(roomCode);
-  if (roomState) roomState.reconnectSecondsLeft.delete(userId);
-}
-
-// ─── LOBBY COUNTDOWN ─────────────────────────────────────────────────────────
-function startCountdown(roomCode, io) {
-  const roomState = ensureRoomState(roomCode);
-  clearTimer(roomState);
-
-  let secondsLeft = roomState.countdownSecondsLeft > 0 ? roomState.countdownSecondsLeft : 60;
-  roomState.countdownSecondsLeft = secondsLeft;
-  io.to(roomCode).emit('countdown_started', { secondsLeft });
-
-  roomState.timer = setInterval(() => {
-    secondsLeft--;
-    roomState.countdownSecondsLeft = secondsLeft;
-    io.to(roomCode).emit('countdown_tick', { secondsLeft });
-    if (secondsLeft <= 0) {
-      clearTimer(roomState);
-      startGame(roomCode, io);
-    }
-  }, 1000);
-}
-
-// ─── START GAME ───────────────────────────────────────────────────────────────
-function startGame(roomCode, io) {
+function getRoomSnapshot(roomCode, userId) {
   const game = getGameByRoomCode.get(roomCode);
-  if (!game || game.status !== 'waiting') return;
+  if (!game) return null;
+  const roomState = rooms.get(roomCode) || ensureRoomState(roomCode);
+  const players = getDisplayPlayers(game, roomState);
+  const activePlayers = getActiveSorted(game, roomState);
+  const currentPlayer = activePlayers.length > 0 ? activePlayers[roomState.currentPlayerIndex % activePlayers.length] : null;
+  const reconnectSecondsLeft = userId ? (roomState.reconnectSecondsLeft.get(userId) ?? null) : null;
 
-  const roomState = ensureRoomState(roomCode);
-  clearFastStartTimer(roomState);
-  const allPlayers = getAllActivePlayers(game, roomState);
-
-  if (allPlayers.length < 2) {
-    io.to(roomCode).emit('game_cancelled', { reason: 'Not enough players' });
-    return;
-  }
-
-  roomState.started = true;
-  roomState.currentPlayerIndex = 0;
-
-  updateGameStatus.run({ status: 'active', id: game.id });
-
-  // Random order is selected once at game start and is kept top-to-bottom.
-  const shuffled = shufflePlayers(allPlayers);
-  roomState.playerOrder = shuffled;
-
-  const freshGameForStart = getGameById.get(game.id);
-  io.to(roomCode).emit('game_started', {
-    players: sanitizePlayers(shuffled),
-    currentPlayer: sanitizePlayer(shuffled[0]),
-    pot: freshGameForStart.pot,
-  });
-
-  console.log(`🎮 Game ${roomCode} started — ${getActivePlayers.all(game.id).length} real + ${(roomState.botPlayers || []).filter(b => b.status === 'active').length} bots`);
-
-  startTurnTimer(roomCode, io);
+  return {
+    game,
+    players: sanitizePlayers(players),
+    activePlayers: sanitizePlayers(activePlayers),
+    currentPlayer: sanitizePlayer(currentPlayer),
+    started: roomState.started || false,
+    turnSecondsLeft: roomState.turnSecondsLeft ?? 10,
+    reconnectSecondsLeft,
+  };
 }
 
-// ─── TURN TIMER ───────────────────────────────────────────────────────────────
-function startTurnTimer(roomCode, io) {
+module.exports = {
+  joinGame,
+  leaveWaitingRoom,
+  leaveActiveGame,
+  toggleReady,
+  rollDiceForPlayer,
+  handleActiveGameDisconnect,
+  handleReconnect,
+  getRoomSnapshot,
+  ensureRoomState,
+};
