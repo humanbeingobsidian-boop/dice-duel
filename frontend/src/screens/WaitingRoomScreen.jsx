@@ -155,7 +155,7 @@ export default function WaitingRoomScreen({
         </div>
       </div>
 
-      {/* Ready button — FIX #4 */}
+      {/* Ready button — before click: ready, after click: unready */}
       {activePlayers.length >= 2 && (
         <button
           className={`btn btn-full ${amIReady ? 'btn-ghost' : 'btn-primary'}`}
@@ -166,7 +166,7 @@ export default function WaitingRoomScreen({
           }}
           onClick={() => { haptic('medium'); onToggleReady(); }}
         >
-          {amIReady ? t('waiting_ready', lang) : t('waiting_unready', lang)}
+          {amIReady ? t('waiting_unready', lang) : t('waiting_ready', lang)}
         </button>
       )}
 
