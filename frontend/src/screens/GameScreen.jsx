@@ -7,6 +7,7 @@ export default function GameScreen({
   game, players, activePlayers, currentPlayer, myUserId,
   lastRoll, onRoll, rolling, rollError,
   turnSecondsLeft, disconnectedPlayer,
+  onLeaveAfterElimination,
 }) {
   const [showEliminated, setShowEliminated] = useState(null);
 
@@ -49,7 +50,7 @@ export default function GameScreen({
         </div>
       </div>
 
-      {/* Disconnected player banner — FIX #6 */}
+      {/* Disconnected player banner */}
       {disconnectedPlayer && (
         <div style={{
           background: 'rgba(245, 158, 11, 0.1)',
@@ -68,7 +69,6 @@ export default function GameScreen({
               {disconnectedPlayer.secondsLeft}s
             </span>
           </div>
-          {/* FIX #2: show reconnect button to the disconnected player themselves */}
           {disconnectedPlayer.userId === myUserId && (
             <div style={{ marginTop: '10px', textAlign: 'center' }}>
               <div style={{ color: 'var(--text2)', fontSize: '13px', marginBottom: '8px' }}>
@@ -89,7 +89,7 @@ export default function GameScreen({
         </div>
       )}
 
-      {/* Eliminated banner — FIX #3: shown for 2.5s */}
+      {/* Eliminated banner */}
       {showEliminated && (
         <div style={{
           background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)',
@@ -102,7 +102,7 @@ export default function GameScreen({
         </div>
       )}
 
-      {/* Current turn + turn timer — FIX #2 */}
+      {/* Current turn + turn timer */}
       <div style={{
         background: isMyTurn
           ? 'linear-gradient(135deg, rgba(124,58,237,0.2), rgba(168,85,247,0.1))'
@@ -127,7 +127,6 @@ export default function GameScreen({
             ) : null}
           </div>
 
-          {/* Turn countdown ring */}
           {!isEliminated && currentPlayer && (
             <div style={{ position: 'relative', width: '52px', height: '52px' }}>
               <svg width="52" height="52" style={{ transform: 'rotate(-90deg)' }}>
@@ -198,10 +197,20 @@ export default function GameScreen({
           <div style={{
             background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
             borderRadius: 'var(--radius)', padding: '16px 24px', textAlign: 'center',
+            width: '100%', maxWidth: '320px',
           }}>
             <div style={{ fontSize: '32px', marginBottom: '6px' }}>💀</div>
             <div style={{ color: 'var(--danger2)', fontWeight: 700 }}>הודחת מהמשחק</div>
-            <div style={{ color: 'var(--text2)', fontSize: '13px', marginTop: '4px' }}>המתן לסוף המשחק...</div>
+            <div style={{ color: 'var(--text2)', fontSize: '13px', marginTop: '4px', marginBottom: '12px' }}>
+              אפשר לצאת עכשיו או להמתין לסוף המשחק.
+            </div>
+            <button
+              className="btn btn-danger btn-full"
+              style={{ fontSize: '15px', padding: '12px' }}
+              onClick={() => { haptic('medium'); onLeaveAfterElimination?.(); }}
+            >
+              צא מהמשחק
+            </button>
           </div>
         )}
       </div>
