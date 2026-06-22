@@ -5,7 +5,8 @@ import { t } from '../utils/i18n';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-const USERBOT_USERNAME = import.meta.env.VITE_USERBOT_USERNAME || '';
+const USERBOT_USERNAME = (import.meta.env.VITE_USERBOT_USERNAME || 'DiceDuelPrizes').replace('@', '');
+const USERBOT_DISPLAY_NAME = import.meta.env.VITE_USERBOT_DISPLAY_NAME || 'Dice Duel Prizes';
 
 export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, onBalanceUpdate }) {
   const [prizes, setPrizes] = useState([]);
@@ -58,6 +59,18 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       hapticNotification('error');
       setResult({ success: false, message: t('prizes_conn_error', lang) });
     } finally { setBuying(null); }
+  }
+
+  function openUserbotChat() {
+    haptic('medium');
+    const url = `https://t.me/${USERBOT_USERNAME}`;
+    if (window.Telegram?.WebApp?.openTelegramLink) {
+      window.Telegram.WebApp.openTelegramLink(url);
+    } else if (window.Telegram?.WebApp?.openLink) {
+      window.Telegram.WebApp.openLink(url);
+    } else {
+      window.open(url, '_blank');
+    }
   }
 
   return (
@@ -148,25 +161,41 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
               <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '3px' }}>
                 {lang === 'he' ? 'כדי לקבל פרסים' : lang === 'ru' ? 'Чтобы получать призы' : 'To receive prizes'}
               </strong>
-              {lang === 'he' ? `שלח "hi" ל-@${USERBOT_USERNAME} כדי שנוכל לשלוח לך פרסים.` :
-               lang === 'ru' ? `Отправь "hi" аккаунту @${USERBOT_USERNAME}.` :
-               `Send "hi" to @${USERBOT_USERNAME} so we can deliver your prizes.`}
+              <span>
+                {lang === 'he'
+                  ? 'שלח "hi" לחשבון '
+                  : lang === 'ru'
+                    ? 'Отправь "hi" аккаунту '
+                    : 'Send "hi" to '}
+              </span>
+              <button
+                type="button"
+                onClick={openUserbotChat}
+                style={{
+                  display: 'inline', border: 0, padding: 0, margin: 0,
+                  background: 'transparent', color: 'var(--accent2)',
+                  font: 'inherit', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer',
+                }}
+              >
+                {USERBOT_DISPLAY_NAME} (@{USERBOT_USERNAME})
+              </button>
+              <span>
+                {lang === 'he'
+                  ? ' כדי שנוכל לשלוח לך פרסים.'
+                  : lang === 'ru'
+                    ? ', чтобы мы могли отправлять тебе призы.'
+                    : ' so we can deliver your prizes.'}
+              </span>
             </div>
           </div>
           <button
             className="btn btn-primary btn-full"
             style={{ fontSize: '13px', padding: '10px' }}
-            onClick={() => {
-              haptic('medium');
-              const url = `https://t.me/${USERBOT_USERNAME}`;
-              if (window.Telegram?.WebApp?.openTelegramLink) {
-                window.Telegram.WebApp.openTelegramLink(url);
-              } else { window.open(url, '_blank'); }
-            }}
+            onClick={openUserbotChat}
           >
-            💬 {lang === 'he' ? `פתח צ'אט עם @${USERBOT_USERNAME}` :
-                lang === 'ru' ? `Открыть чат с @${USERBOT_USERNAME}` :
-                `Open chat with @${USERBOT_USERNAME}`}
+            💬 {lang === 'he' ? `פתח צ'אט עם ${USERBOT_DISPLAY_NAME}` :
+                lang === 'ru' ? `Открыть чат с ${USERBOT_DISPLAY_NAME}` :
+                `Open chat with ${USERBOT_DISPLAY_NAME}`}
           </button>
         </div>
       )}
