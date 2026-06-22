@@ -13,8 +13,18 @@ module.exports = function setupSocket(io) {
   io.on('connection', (socket) => {
     console.log(`🔌 Socket connected: ${socket.id}`);
     let authenticatedUser = null;
+    const actionLocks = new Map();
+
+    function blocked(action, ms = 700) {
+      const now = Date.now();
+      const last = actionLocks.get(action) || 0;
+      if (now - last < ms) return true;
+      actionLocks.set(action, now);
+      return false;
+    }
 
     socket.on('authenticate', async ({ initData, referralCode }) => {
+      if (blocked('authenticate', 400)) return;
       try {
         let telegramUser;
         if (process.env.DEV_MODE === 'true') {
@@ -61,6 +71,7 @@ module.exports = function setupSocket(io) {
     });
 
     socket.on('join_game', ({ entryFee = 100 } = {}) => {
+      if (blocked('join_game', 1200)) return;
       if (!authenticatedUser) return socket.emit('error', { error: 'Not authenticated' });
       const fee = [5, 100].includes(Number(entryFee)) ? Number(entryFee) : 100;
       try {
@@ -72,6 +83,7 @@ module.exports = function setupSocket(io) {
     });
 
     socket.on('toggle_ready', () => {
+      if (blocked('toggle_ready', 800)) return;
       if (!authenticatedUser || !socket.roomCode) return;
       try {
         toggleReady(authenticatedUser.telegramUser, socket.roomCode, io);
@@ -81,11 +93,13 @@ module.exports = function setupSocket(io) {
     });
 
     socket.on('leave_game', () => {
+      if (blocked('leave_game', 1200)) return;
       if (!authenticatedUser) return;
       _doLeaveWaiting(socket, authenticatedUser, io);
     });
 
     socket.on('leave_active_game', () => {
+      if (blocked('leave_active_game', 1200)) return;
       if (!authenticatedUser || !socket.roomCode) return;
       try {
         const result = leaveActiveGame(authenticatedUser.telegramUser, socket.roomCode);
@@ -105,6 +119,7 @@ module.exports = function setupSocket(io) {
     });
 
     socket.on('reconnect_game', ({ roomCode }) => {
+      if (blocked('reconnect_game', 1000)) return;
       if (!authenticatedUser || !roomCode) return;
       handleReconnect(authenticatedUser.telegramUser, roomCode, io);
       const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
@@ -121,6 +136,7 @@ module.exports = function setupSocket(io) {
     });
 
     socket.on('find_active_game', () => {
+      if (blocked('find_active_game', 900)) return;
       if (!authenticatedUser) return;
       const { db } = require('../db/queries');
       const row = db.prepare(`
@@ -132,22 +148,21 @@ module.exports = function setupSocket(io) {
 
       if (row) {
         const roomCode = row.room_code;
-        handleReconnect(authenticatedUser.telegramUser, roomCode, io);
         const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
         socket.join(roomCode);
         socket.roomCode = roomCode;
         socket.userId = authenticatedUser.dbUser.id;
-        io.to(roomCode).emit('player_reconnected', {
-          userId: authenticatedUser.dbUser.id,
-          firstName: authenticatedUser.dbUser.first_name,
+        socket.emit('active_game_found', {
+          roomCode,
+          snapshot: snapshot ? { ...snapshot, reconnectSecondsLeft: snapshot.reconnectSecondsLeft || 30 } : snapshot,
         });
-        socket.emit('active_game_found', { roomCode, snapshot });
       } else {
         socket.emit('no_active_game', {});
       }
     });
 
     socket.on('roll_dice', () => {
+      if (blocked('roll_dice', 900)) return;
       if (!authenticatedUser) return socket.emit('error', { error: 'Not authenticated' });
       if (!socket.roomCode) return socket.emit('error', { error: 'Not in a game room' });
       try {
