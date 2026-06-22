@@ -242,7 +242,10 @@ const setPlayerWinner = db.prepare(`
 `);
 
 const isPlayerInGame = db.prepare(`
-  SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ?
+  SELECT 1 FROM game_players gp
+  JOIN games g ON g.id = gp.game_id
+  WHERE gp.game_id = ? AND gp.user_id = ?
+  AND g.status IN ('waiting', 'active')
 `);
 
 const countActivePlayers = db.prepare(`
