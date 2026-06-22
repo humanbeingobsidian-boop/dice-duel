@@ -26,9 +26,9 @@ function createBotPlayer() {
   };
 }
 
-// 2 עד 5 בוטים רנדומלית
+// 1 עד 4 בוטים רנדומלית
 function randomBotCount() {
-  return Math.floor(Math.random() * 4) + 2;
+  return Math.floor(Math.random() * 4) + 1;
 }
 
 module.exports = { createBotPlayer, randomBotCount };
