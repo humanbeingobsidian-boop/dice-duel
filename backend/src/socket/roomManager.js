@@ -78,7 +78,12 @@ function joinGame(telegramUser, io, entryFee = 100) {
   if (dbUser.balance < entryFee) throw new Error('INSUFFICIENT_BALANCE');
 
   const { game } = getOrCreateWaitingRoom(entryFee);
-  if (isPlayerInGame.get(game.id, dbUser.id)) throw new Error('ALREADY_IN_GAME');
+  const alreadyInActiveGame = db.prepare(`
+    SELECT 1 FROM game_players gp
+    JOIN games g ON g.id = gp.game_id
+    WHERE gp.user_id = ? AND g.status = 'waiting'
+`).get(dbUser.id);
+if (alreadyInActiveGame) throw new Error('ALREADY_IN_GAME');
 
   const currentPlayers = getGamePlayers.all(game.id);
   joinGameTransaction(dbUser.id, game.id, game.entry_fee, currentPlayers.length);
