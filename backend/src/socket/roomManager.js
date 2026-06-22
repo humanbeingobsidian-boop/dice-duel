@@ -73,6 +73,7 @@ function ensureRoomState(roomCode) {
       botPlayers: [],
       botsScheduled: false,
       playerOrder: null,
+      fastStartTimer: null,
     });
   }
   return rooms.get(roomCode);
@@ -84,6 +85,10 @@ function clearTimer(roomState) {
 
 function clearTurnTimer(roomState) {
   if (roomState.turnTimer) { clearInterval(roomState.turnTimer); roomState.turnTimer = null; }
+}
+
+function clearFastStartTimer(roomState) {
+  if (roomState.fastStartTimer) { clearTimeout(roomState.fastStartTimer); roomState.fastStartTimer = null; }
 }
 
 function buildMergedPlayers(realPlayers, botPlayers) {
@@ -183,10 +188,14 @@ function maybeStartIfAllReady(roomCode, io, game) {
   const { activePlayers, readyCount } = emitReady(roomCode, io, game);
   if (activePlayers.length >= 2 && readyCount === activePlayers.length) {
     clearTimer(roomState);
-    io.to(roomCode).emit('all_ready', {});
-    setTimeout(() => startGame(roomCode, io), 1500);
+    clearFastStartTimer(roomState);
+    const hasBot = activePlayers.some(p => (roomState.botPlayers || []).some(b => b.id === p.user_id));
+    const delay = hasBot ? 3500 : 1500;
+    io.to(roomCode).emit('all_ready', { startsInMs: delay });
+    roomState.fastStartTimer = setTimeout(() => startGame(roomCode, io), delay);
     return true;
   }
+  clearFastStartTimer(roomState);
   return false;
 }
 
@@ -340,11 +349,13 @@ function leaveWaitingRoom(telegramUser, io) {
 
   if (roomState && remainingRealPlayers.length === 0) {
     clearTimer(roomState);
+    clearFastStartTimer(roomState);
     roomState.readyPlayers.clear();
     roomState.botPlayers = [];
     db.prepare(`UPDATE games SET pot = 0 WHERE id = ?`).run(row.id);
     io.to(row.room_code).emit('countdown_stopped', {});
   } else if (roomState && !roomState.timer && !roomState.started) {
+    clearFastStartTimer(roomState);
     startCountdown(row.room_code, io);
   }
 
@@ -531,6 +542,7 @@ function startGame(roomCode, io) {
   if (!game || game.status !== 'waiting') return;
 
   const roomState = ensureRoomState(roomCode);
+  clearFastStartTimer(roomState);
   const allPlayers = getAllActivePlayers(game, roomState);
 
   if (allPlayers.length < 2) {
@@ -561,199 +573,3 @@ function startGame(roomCode, io) {
 
 // ─── TURN TIMER ───────────────────────────────────────────────────────────────
 function startTurnTimer(roomCode, io) {
-  const roomState = rooms.get(roomCode);
-  if (!roomState) return;
-
-  clearTurnTimer(roomState);
-  roomState.turnSecondsLeft = 10;
-
-  io.to(roomCode).emit('turn_timer_tick', { secondsLeft: 10 });
-
-  roomState.turnTimer = setInterval(() => {
-    roomState.turnSecondsLeft--;
-    io.to(roomCode).emit('turn_timer_tick', { secondsLeft: roomState.turnSecondsLeft });
-
-    if (roomState.turnSecondsLeft <= 0) {
-      clearTurnTimer(roomState);
-      const game = getGameByRoomCode.get(roomCode);
-      if (!game || game.status !== 'active') return;
-
-      const allActive = getActiveSorted(game, roomState);
-      if (!allActive.length) return;
-
-      const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
-      if (!currentPlayer) return;
-
-      _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, game, roomState, io);
-    }
-  }, 1000);
-
-  const checkBotTurn = () => {
-    const game = getGameByRoomCode.get(roomCode);
-    if (!game || game.status !== 'active') return;
-    const allActive = getActiveSorted(game, roomState);
-    if (!allActive.length) return;
-    const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
-    const isBot = (roomState.botPlayers || []).some(b => b.id === currentPlayer?.user_id);
-    if (isBot) {
-      const delay = Math.floor(Math.random() * 3000) + 1000;
-      setTimeout(() => {
-        if (!roomState.turnTimer) return;
-        clearTurnTimer(roomState);
-        const freshGame = getGameByRoomCode.get(roomCode);
-        if (!freshGame || freshGame.status !== 'active') return;
-        _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, freshGame, roomState, io);
-      }, delay);
-    }
-  };
-  checkBotTurn();
-}
-
-// ─── ROLL DICE ────────────────────────────────────────────────────────────────
-function rollDiceForPlayer(roomCode, telegramUserId, io) {
-  const game = getGameByRoomCode.get(roomCode);
-  if (!game || game.status !== 'active') throw new Error('GAME_NOT_ACTIVE');
-
-  const dbUser = getUserByTelegramId.get(String(telegramUserId));
-  if (!dbUser) throw new Error('USER_NOT_FOUND');
-
-  const roomState = rooms.get(roomCode);
-  if (!roomState) throw new Error('ROOM_NOT_FOUND');
-
-  const allActive = getActiveSorted(game, roomState);
-  if (!allActive.length) throw new Error('NO_ACTIVE_PLAYERS');
-
-  const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
-  if (!currentPlayer || currentPlayer.user_id !== dbUser.id) throw new Error('NOT_YOUR_TURN');
-
-  clearTurnTimer(roomState);
-  return _executeRoll(roomCode, dbUser.id, String(telegramUserId), dbUser.first_name, game, roomState, io);
-}
-
-// ─── CORE ROLL LOGIC ─────────────────────────────────────────────────────────
-function _executeRoll(roomCode, userId, telegramId, firstName, game, roomState, io) {
-  roomState.reconnectSecondsLeft.delete(userId);
-  const diceResult = rollDice();
-  const isEliminated = diceResult === 1;
-
-  const isBot = (roomState.botPlayers || []).some(b => b.id === userId);
-
-  if (!isBot) {
-    recordTurn.run({ game_id: game.id, user_id: userId, dice_result: diceResult, was_eliminated: isEliminated ? 1 : 0 });
-    if (isEliminated) eliminatePlayer.run({ game_id: game.id, user_id: userId });
-  } else if (isEliminated) {
-    const bot = roomState.botPlayers.find(b => b.id === userId);
-    if (bot) bot.status = 'eliminated';
-  }
-
-  const remainingPlayers = getActiveSorted(game, roomState);
-  const displayPlayers = getDisplayPlayers(game, roomState);
-
-  io.to(roomCode).emit('dice_rolled', {
-    userId, telegramId, firstName, diceResult, isEliminated,
-    remainingPlayers: sanitizePlayers(remainingPlayers),
-    players: sanitizePlayers(displayPlayers),
-  });
-
-  if (remainingPlayers.length <= 1) {
-    setTimeout(() => {
-      if (remainingPlayers.length === 1) {
-        endGame(roomCode, remainingPlayers[0], game, io);
-      } else {
-        io.to(roomCode).emit('game_draw', {});
-        updateGameStatus.run({ status: 'finished', id: game.id });
-        rooms.delete(roomCode);
-      }
-    }, 2500);
-    return { diceResult, isEliminated, gameOver: true };
-  }
-
-  if (!isEliminated) {
-    roomState.currentPlayerIndex = (roomState.currentPlayerIndex + 1) % remainingPlayers.length;
-  } else {
-    roomState.currentPlayerIndex = roomState.currentPlayerIndex % remainingPlayers.length;
-  }
-
-  io.to(roomCode).emit('next_turn', {
-    currentPlayer: sanitizePlayer(remainingPlayers[roomState.currentPlayerIndex]),
-    remainingPlayers: sanitizePlayers(remainingPlayers),
-  });
-
-  startTurnTimer(roomCode, io);
-  return { diceResult, isEliminated, gameOver: false };
-}
-
-// ─── END GAME ─────────────────────────────────────────────────────────────────
-function endGame(roomCode, winner, game, io) {
-  const freshGame = getGameById.get(game.id);
-  if (!freshGame || freshGame.status === 'finished') return;
-
-  const pot = freshGame.pot;
-  const houseCut = Math.floor((pot * freshGame.house_fee_percent) / 100);
-  const prize = pot - houseCut;
-
-  const isBot = winner.isBot === true;
-
-  console.log(`🔍 endGame: winner=${winner.first_name} isBot=${isBot} user_id=${winner.user_id} pot=${pot} prize=${prize}`);
-
-  if (!isBot) {
-    finalizeGameTransaction(game.id, winner.user_id, prize, houseCut);
-  } else {
-    updateGameStatus.run({ status: 'finished', id: game.id });
-  }
-
-  io.to(roomCode).emit('game_over', {
-    winner: {
-      userId: winner.user_id,
-      telegramId: winner.telegram_id,
-      firstName: winner.first_name,
-      username: winner.username || null,
-    },
-    pot,
-    // If a bot wins, show the same visible prize amount, but do not credit any DB user.
-    prize,
-    houseCut,
-  });
-
-  if (!isBot) {
-    console.log(`🏆 ${winner.first_name} won — prize: ${prize}`);
-  }
-
-  const roomState = rooms.get(roomCode);
-  if (roomState) { clearTimer(roomState); clearTurnTimer(roomState); }
-  rooms.delete(roomCode);
-}
-
-// ─── SNAPSHOT ────────────────────────────────────────────────────────────────
-function getRoomSnapshot(roomCode, userId) {
-  const game = getGameByRoomCode.get(roomCode);
-  if (!game) return null;
-  const roomState = rooms.get(roomCode) || ensureRoomState(roomCode);
-  const players = getDisplayPlayers(game, roomState);
-  const activePlayers = getActiveSorted(game, roomState);
-
-  let currentPlayer = null;
-  if (roomState && activePlayers.length > 0) {
-    currentPlayer = activePlayers[roomState.currentPlayerIndex % activePlayers.length];
-  }
-
-  const reconnectSecondsLeft = userId && roomState
-    ? (roomState.reconnectSecondsLeft.get(userId) ?? null)
-    : null;
-
-  return {
-    game,
-    players: sanitizePlayers(players),
-    activePlayers: sanitizePlayers(activePlayers),
-    currentPlayer: sanitizePlayer(currentPlayer),
-    started: roomState?.started || false,
-    turnSecondsLeft: roomState?.turnSecondsLeft ?? 10,
-    reconnectSecondsLeft,
-  };
-}
-
-module.exports = {
-  joinGame, leaveWaitingRoom, leaveActiveGame, toggleReady, rollDiceForPlayer,
-  handleActiveGameDisconnect, handleReconnect,
-  getRoomSnapshot, ensureRoomState,
-};
