@@ -12,9 +12,9 @@ PORT     = int(os.environ.get("USERBOT_PORT", "3002"))
 
 # Optional profile settings for the Telegram user account that sends prize messages.
 # Set these in Render Environment Variables. USERBOT_USERNAME must be without @.
-USERBOT_FIRST_NAME = os.environ.get("USERBOT_FIRST_NAME", "").strip()
-USERBOT_LAST_NAME  = os.environ.get("USERBOT_LAST_NAME", "").strip()
-USERBOT_USERNAME   = os.environ.get("USERBOT_USERNAME", "").strip().lstrip("@")
+USERBOT_FIRST_NAME = os.environ.get("USERBOT_FIRST_NAME", "Dice Duel").strip()
+USERBOT_LAST_NAME  = os.environ.get("USERBOT_LAST_NAME", "Prizes").strip()
+USERBOT_USERNAME   = os.environ.get("USERBOT_USERNAME", "DiceDuelPrizes").strip().lstrip("@")
 
 if not all([API_ID, API_HASH, SESSION]):
     print("⚠️  Userbot env vars not set — skipping")
