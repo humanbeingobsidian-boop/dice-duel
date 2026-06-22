@@ -5,8 +5,9 @@ import { t } from '../utils/i18n';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-const USERBOT_USERNAME = (import.meta.env.VITE_USERBOT_USERNAME || 'DiceDuelPrizes').replace('@', '');
-const USERBOT_DISPLAY_NAME = import.meta.env.VITE_USERBOT_DISPLAY_NAME || 'Dice Duel Prizes';
+// Keep this hardcoded so stale Vercel env values such as VITE_USERBOT_USERNAME=PoppyUSA cannot override it.
+const USERBOT_USERNAME = 'DiceDuelPrizes';
+const USERBOT_DISPLAY_NAME = 'Dice Duel Prizes';
 
 export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, onBalanceUpdate }) {
   const [prizes, setPrizes] = useState([]);
@@ -148,57 +149,55 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       )}
 
       {/* Userbot banner */}
-      {USERBOT_USERNAME && (
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))',
-          border: '1px solid rgba(124,58,237,0.4)',
-          borderRadius: 'var(--radius)', padding: '14px 16px',
-          display: 'flex', flexDirection: 'column', gap: '10px',
-        }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '22px', flexShrink: 0 }}>📬</span>
-            <div style={{ fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
-              <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '3px' }}>
-                {lang === 'he' ? 'כדי לקבל פרסים' : lang === 'ru' ? 'Чтобы получать призы' : 'To receive prizes'}
-              </strong>
-              <span>
-                {lang === 'he'
-                  ? 'שלח "hi" לחשבון '
-                  : lang === 'ru'
-                    ? 'Отправь "hi" аккаунту '
-                    : 'Send "hi" to '}
-              </span>
-              <button
-                type="button"
-                onClick={openUserbotChat}
-                style={{
-                  display: 'inline', border: 0, padding: 0, margin: 0,
-                  background: 'transparent', color: 'var(--accent2)',
-                  font: 'inherit', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer',
-                }}
-              >
-                {USERBOT_DISPLAY_NAME} (@{USERBOT_USERNAME})
-              </button>
-              <span>
-                {lang === 'he'
-                  ? ' כדי שנוכל לשלוח לך פרסים.'
-                  : lang === 'ru'
-                    ? ', чтобы мы могли отправлять тебе призы.'
-                    : ' so we can deliver your prizes.'}
-              </span>
-            </div>
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))',
+        border: '1px solid rgba(124,58,237,0.4)',
+        borderRadius: 'var(--radius)', padding: '14px 16px',
+        display: 'flex', flexDirection: 'column', gap: '10px',
+      }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <span style={{ fontSize: '22px', flexShrink: 0 }}>📬</span>
+          <div style={{ fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
+            <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '3px' }}>
+              {lang === 'he' ? 'כדי לקבל פרסים' : lang === 'ru' ? 'Чтобы получать призы' : 'To receive prizes'}
+            </strong>
+            <span>
+              {lang === 'he'
+                ? 'שלח "hi" לחשבון '
+                : lang === 'ru'
+                  ? 'Отправь "hi" аккаунту '
+                  : 'Send "hi" to '}
+            </span>
+            <button
+              type="button"
+              onClick={openUserbotChat}
+              style={{
+                display: 'inline', border: 0, padding: 0, margin: 0,
+                background: 'transparent', color: 'var(--accent2)',
+                font: 'inherit', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer',
+              }}
+            >
+              {USERBOT_DISPLAY_NAME} (@{USERBOT_USERNAME})
+            </button>
+            <span>
+              {lang === 'he'
+                ? ' כדי שנוכל לשלוח לך פרסים.'
+                : lang === 'ru'
+                  ? ', чтобы мы могли отправлять тебе призы.'
+                  : ' so we can deliver your prizes.'}
+            </span>
           </div>
-          <button
-            className="btn btn-primary btn-full"
-            style={{ fontSize: '13px', padding: '10px' }}
-            onClick={openUserbotChat}
-          >
-            💬 {lang === 'he' ? `פתח צ'אט עם ${USERBOT_DISPLAY_NAME}` :
-                lang === 'ru' ? `Открыть чат с ${USERBOT_DISPLAY_NAME}` :
-                `Open chat with ${USERBOT_DISPLAY_NAME}`}
-          </button>
         </div>
-      )}
+        <button
+          className="btn btn-primary btn-full"
+          style={{ fontSize: '13px', padding: '10px' }}
+          onClick={openUserbotChat}
+        >
+          💬 {lang === 'he' ? `פתח צ'אט עם ${USERBOT_DISPLAY_NAME}` :
+              lang === 'ru' ? `Открыть чат с ${USERBOT_DISPLAY_NAME}` :
+              `Open chat with ${USERBOT_DISPLAY_NAME}`}
+        </button>
+      </div>
 
       <div style={{
         background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
