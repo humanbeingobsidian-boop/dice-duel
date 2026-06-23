@@ -3,12 +3,16 @@ import React, { useState } from 'react';
 import { haptic } from '../utils/telegram';
 import { t } from '../utils/i18n';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import ProfileScreen from './ProfileScreen';
 
 export default function LobbyScreen({
   lang = 'en', onLangChange, user, onJoin, onLeaderboard, onPrizes, onInvite, onBack,
   loading, error, selectedFee = 5, onFeeChange,
 }) {
   const [joinLocked, setJoinLocked] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileUser, setProfileUser] = useState(null);
+  const displayUser = profileUser || user;
   const tables = [
     { fee: 5,   label: t('lobby_table_low', lang),  feeLabel: t('lobby_table_low_fee', lang),  color: 'var(--success2)' },
     { fee: 100, label: t('lobby_table_high', lang), feeLabel: t('lobby_table_high_fee', lang), color: 'var(--gold2)' },
@@ -22,6 +26,10 @@ export default function LobbyScreen({
     setTimeout(() => setJoinLocked(false), 1200);
   }
 
+  if (showProfile) {
+    return <ProfileScreen lang={lang} onBack={() => setShowProfile(false)} onProfileSaved={(updatedUser) => setProfileUser(u => ({ ...(u || user || {}), ...updatedUser }))} />;
+  }
+
   return (
     <div className="screen" style={{
       background: 'radial-gradient(ellipse at 50% 20%, #1a0a3a 0%, var(--bg) 60%)',
@@ -33,10 +41,16 @@ export default function LobbyScreen({
         <LanguageSwitcher lang={lang} onChange={onLangChange} />
       </div>
 
-      <div style={{ width: '100%', maxWidth: '360px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: '12px', color: 'var(--text3)', marginBottom: '2px' }}>{t('lobby_player', lang)}</div>
-          <div style={{ fontWeight: 700, fontSize: '16px' }}>{user?.first_name || '—'}</div>
+      <button type="button" onClick={() => { if (user) { haptic('light'); setShowProfile(true); } }} style={{ width: '100%', maxWidth: '360px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'inherit', font: 'inherit', color: 'inherit', cursor: user ? 'pointer' : 'default' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: displayUser?.selected_frame === 'gold' ? 'linear-gradient(135deg, var(--gold), var(--gold2))' : displayUser?.selected_frame === 'neon' ? 'linear-gradient(135deg, #06b6d4, #a855f7)' : displayUser?.selected_frame === 'purple' ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', boxShadow: '0 5px 14px rgba(0,0,0,0.25)' }}>
+            {displayUser?.selected_avatar || '🐢'}
+          </div>
+          <div>
+            <div style={{ fontSize: '12px', color: 'var(--text3)', marginBottom: '2px' }}>{t('lobby_player', lang)}</div>
+            <div style={{ fontWeight: 700, fontSize: '16px' }}>{displayUser?.nickname || displayUser?.first_name || '—'}</div>
+            {displayUser?.level && <div style={{ fontSize: '11px', color: 'var(--gold2)', marginTop: '2px' }}>{lang === 'he' ? 'רמה' : lang === 'ru' ? 'Уровень' : 'Level'} {displayUser.level}</div>}
+          </div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '12px', color: 'var(--text3)', marginBottom: '2px' }}>{t('lobby_balance', lang)}</div>
@@ -45,7 +59,7 @@ export default function LobbyScreen({
             {user?.balance !== undefined && <span style={{ fontSize: '12px', color: 'var(--text3)', fontFamily: 'Space Grotesk', marginRight: '4px' }}> {t('lobby_credits', lang)}</span>}
           </div>
         </div>
-      </div>
+      </button>
 
       <div style={{ width: '100%', maxWidth: '360px' }}>
         <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '10px', fontWeight: 600 }}>{t('lobby_choose_table', lang)}</div>
