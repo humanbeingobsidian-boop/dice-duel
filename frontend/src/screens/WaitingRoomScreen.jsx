@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { haptic } from '../utils/telegram';
 import { t } from '../utils/i18n';
+import { getPlayerAvatar, getPlayerAvatarStyle } from '../utils/profileVisuals';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const TOTAL_TIME = 60;
@@ -147,10 +148,12 @@ export default function WaitingRoomScreen({
 function PlayerSlot({ player, isMe, isReady, lang }) {
   const name = truncateName(player.first_name || player.username || 'Player');
   const initials = name.slice(0, 2).toUpperCase();
+  const avatar = getPlayerAvatar(player, initials);
+  const avatarStyle = getPlayerAvatarStyle(player, isMe ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'var(--surface2)');
   return (
     <div style={{ background: isMe ? 'rgba(124,58,237,0.2)' : 'var(--bg3)', border: `2px solid ${isReady ? 'var(--success2)' : isMe ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', padding: '10px 6px', textAlign: 'center', animation: 'pop 0.3s ease forwards', position: 'relative' }}>
       {isReady && <div style={{ position: 'absolute', top: '-6px', right: '-6px', background: 'var(--success2)', color: 'white', width: '18px', height: '18px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700 }}>✓</div>}
-      <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: player.avatarColor || (isMe ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'var(--surface2)'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: player.avatar ? '17px' : '12px', fontWeight: 700, margin: '0 auto 5px', color: 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.18)' }}>{player.avatar || initials}</div>
+      <div style={{ width: '34px', height: '34px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: player.avatar || player.selected_avatar ? '17px' : '12px', fontWeight: 700, margin: '0 auto 5px', color: 'white', ...avatarStyle }}>{avatar}</div>
       <div style={{ fontSize: '11px', fontWeight: 600, color: isMe ? 'var(--accent2)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{isMe ? t('waiting_you', lang) : name}</div>
     </div>
   );
