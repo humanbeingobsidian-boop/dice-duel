@@ -40,14 +40,30 @@ export function getProfileFrameBorder(frame) {
   }
 }
 
+export function getPlayerDisplayName(player, fallback = 'Player') {
+  return player?.display_name || player?.nickname || player?.first_name || player?.username || fallback;
+}
+
 export function getPlayerAvatar(player, fallback = '') {
   return player?.avatar || player?.selected_avatar || fallback;
 }
 
 export function getPlayerAvatarStyle(player, fallbackBackground) {
   return {
-    background: player?.avatarColor || getProfileBackground(player?.selected_background) || fallbackBackground,
-    boxShadow: getProfileFrameShadow(player?.selected_frame),
-    border: getProfileFrameBorder(player?.selected_frame),
+    background: player?.avatarColor || getProfileBackground(player?.background || player?.selected_background) || fallbackBackground,
+    boxShadow: getProfileFrameShadow(player?.frame || player?.selected_frame),
+    border: getProfileFrameBorder(player?.frame || player?.selected_frame),
+  };
+}
+
+export function normalizePlayer(player) {
+  if (!player) return player;
+  return {
+    ...player,
+    display_name: getPlayerDisplayName(player),
+    avatar: getPlayerAvatar(player),
+    background: player.background || player.selected_background,
+    frame: player.frame || player.selected_frame,
+    title: player.title || player.selected_title,
   };
 }
