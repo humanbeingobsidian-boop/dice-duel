@@ -8,6 +8,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const createApiRouter = require('./routes/api');
+const createProfileRouter = require('./routes/profile');
 const setupSocket = require('./socket/socketHandler');
 const { startBot } = require('./bot');
 
@@ -33,6 +34,7 @@ app.use(express.json());
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api', createApiRouter(io));
+app.use('/api', createProfileRouter());
 
 app.get('/health', (req, res) => {
   res.json({
