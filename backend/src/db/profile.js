@@ -40,6 +40,28 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_xp_events_user_id ON xp_events(user_id);
+
+  CREATE TRIGGER IF NOT EXISTS trg_game_finished_participation_xp
+  AFTER UPDATE OF status ON games
+  WHEN NEW.status = 'finished' AND OLD.status <> 'finished'
+  BEGIN
+    INSERT INTO xp_events (user_id, amount, reason, meta_json)
+    SELECT gp.user_id, ${XP_REWARDS.GAME_PARTICIPATION}, 'game_participation', NULL
+    FROM game_players gp
+    WHERE gp.game_id = NEW.id;
+
+    UPDATE users
+    SET xp = xp + ${XP_REWARDS.GAME_PARTICIPATION}, updated_at = CURRENT_TIMESTAMP
+    WHERE id IN (SELECT user_id FROM game_players WHERE game_id = NEW.id);
+
+    INSERT INTO xp_events (user_id, amount, reason, meta_json)
+    SELECT NEW.winner_user_id, ${XP_REWARDS.GAME_WIN}, 'game_win', NULL
+    WHERE NEW.winner_user_id IS NOT NULL;
+
+    UPDATE users
+    SET xp = xp + ${XP_REWARDS.GAME_WIN}, updated_at = CURRENT_TIMESTAMP
+    WHERE id = NEW.winner_user_id AND NEW.winner_user_id IS NOT NULL;
+  END;
 `);
 
 const insertXpEvent = db.prepare(`
