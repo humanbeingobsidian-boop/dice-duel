@@ -30,22 +30,28 @@ addColumn('users', 'friends_invited', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'stars_bought', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'stars_spent', 'INTEGER NOT NULL DEFAULT 0');
 
-// Now that profile columns exist, replace game-player queries with profile-aware versions.
-// roomManager imports these after this module loads, so the destructured statements include the visual fields.
-queries.getGamePlayers = db.prepare(`
-  SELECT
+const profilePlayerSelect = `
     gp.*,
     u.telegram_id,
     u.username,
     COALESCE(u.nickname, u.first_name) AS first_name,
+    COALESCE(u.nickname, u.first_name) AS display_name,
     u.first_name AS original_first_name,
     u.nickname,
     u.level,
     u.selected_avatar AS avatar,
     u.selected_avatar,
+    u.selected_background AS background,
     u.selected_background,
+    u.selected_frame AS frame,
     u.selected_frame,
+    u.selected_title AS title,
     u.selected_title
+`;
+
+// Now that profile columns exist, replace game-player queries with profile-aware versions.
+queries.getGamePlayers = db.prepare(`
+  SELECT ${profilePlayerSelect}
   FROM game_players gp
   JOIN users u ON u.id = gp.user_id
   WHERE gp.game_id = ?
@@ -53,19 +59,7 @@ queries.getGamePlayers = db.prepare(`
 `);
 
 queries.getActivePlayers = db.prepare(`
-  SELECT
-    gp.*,
-    u.telegram_id,
-    u.username,
-    COALESCE(u.nickname, u.first_name) AS first_name,
-    u.first_name AS original_first_name,
-    u.nickname,
-    u.level,
-    u.selected_avatar AS avatar,
-    u.selected_avatar,
-    u.selected_background,
-    u.selected_frame,
-    u.selected_title
+  SELECT ${profilePlayerSelect}
   FROM game_players gp
   JOIN users u ON u.id = gp.user_id
   WHERE gp.game_id = ? AND gp.status = 'active'
