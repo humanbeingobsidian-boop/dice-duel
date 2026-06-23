@@ -13,12 +13,35 @@ const { createBotPlayer, randomBotCount } = require('./botPlayers');
 
 const rooms = new Map();
 
+const PUBLIC_AVATARS = ['🦊', '🐼', '🐯', '🐵', '🐨', '🐺', '🦁', '🐸', '🐧', '🐰', '🦄', '🐲', '🦉', '🐙', '🦋', '⭐', '🔥', '⚡', '🌙', '🍀'];
+const PUBLIC_COLORS = [
+  'linear-gradient(135deg, #7c3aed, #a855f7)',
+  'linear-gradient(135deg, #2563eb, #38bdf8)',
+  'linear-gradient(135deg, #059669, #34d399)',
+  'linear-gradient(135deg, #dc2626, #fb7185)',
+  'linear-gradient(135deg, #d97706, #fbbf24)',
+  'linear-gradient(135deg, #9333ea, #ec4899)',
+  'linear-gradient(135deg, #0f766e, #2dd4bf)',
+  'linear-gradient(135deg, #4f46e5, #818cf8)',
+];
+
 function generateRoomCode() {
   return crypto.randomBytes(3).toString('hex').toUpperCase();
 }
 
 function rollDice() {
   return Math.floor(Math.random() * 6) + 1;
+}
+
+function randomBetween(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function stableIndex(value, mod) {
+  const str = String(value || '0');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  return Math.abs(hash) % mod;
 }
 
 function shufflePlayers(players) {
@@ -32,7 +55,10 @@ function shufflePlayers(players) {
 
 function sanitizePlayer(player) {
   if (!player) return player;
-  const { isBot, balance, ...safe } = player;
+  const { isBot, balance, readyDelayMs, turnDelayMinMs, turnDelayMaxMs, ...safe } = player;
+  const stableId = safe.user_id || safe.telegram_id || safe.id;
+  if (!safe.avatar) safe.avatar = PUBLIC_AVATARS[stableIndex(stableId, PUBLIC_AVATARS.length)];
+  if (!safe.avatarColor) safe.avatarColor = PUBLIC_COLORS[stableIndex(`${stableId}:color`, PUBLIC_COLORS.length)];
   return safe;
 }
 
@@ -50,6 +76,7 @@ function ensureRoomState(roomCode) {
       started: false,
       turnTimer: null,
       turnSecondsLeft: 10,
+      turnToken: 0,
       reconnectTimers: new Map(),
       reconnectSecondsLeft: new Map(),
       readyPlayers: new Set(),
@@ -88,6 +115,7 @@ function clearRoomRuntime(roomState) {
   clearTimer(roomState);
   clearTurnTimer(roomState);
   clearFastStartTimer(roomState);
+  roomState.turnToken++;
   for (const timer of roomState.reconnectTimers.values()) {
     clearTimeout(timer);
     clearInterval(timer);
@@ -109,6 +137,11 @@ function buildMergedPlayers(realPlayers, botPlayers) {
       username: null,
       status: b.status || 'active',
       seat_order: b.seat_order,
+      avatar: b.avatar,
+      avatarColor: b.avatarColor,
+      readyDelayMs: b.readyDelayMs,
+      turnDelayMinMs: b.turnDelayMinMs,
+      turnDelayMaxMs: b.turnDelayMaxMs,
       isBot: true,
     })),
   ];
@@ -165,7 +198,7 @@ function getOrCreateWaitingRoom(entryFee = 100) {
   return { game: newGame };
 }
 
-function closeWaitingRoom(roomCode, game, io, reason = 'No real players') {
+function closeWaitingRoom(roomCode, game, io, reason = 'Room closed') {
   const roomState = rooms.get(roomCode);
   clearRoomRuntime(roomState);
   db.prepare('DELETE FROM game_players WHERE game_id = ?').run(game.id);
@@ -179,7 +212,7 @@ function closeWaitingRoom(roomCode, game, io, reason = 'No real players') {
 function closeIfNoRealPlayers(roomCode, game, io) {
   const realPlayers = getGamePlayers.all(game.id);
   if (realPlayers.length > 0) return false;
-  closeWaitingRoom(roomCode, game, io, 'No real players');
+  closeWaitingRoom(roomCode, game, io, 'Room closed');
   return true;
 }
 
@@ -199,7 +232,7 @@ function cleanupExistingWaitingMembership(userId, io) {
     const roomState = rooms.get(row.room_code);
 
     if (remainingRealPlayers.length === 0) {
-      closeWaitingRoom(row.room_code, freshGame, io, 'No real players');
+      closeWaitingRoom(row.room_code, freshGame, io, 'Room closed');
       continue;
     }
 
@@ -271,7 +304,7 @@ function maybeStartIfAllReady(roomCode, io, game) {
     clearTimer(roomState);
     clearFastStartTimer(roomState);
     const hasBot = activePlayers.some(p => (roomState.botPlayers || []).some(b => b.id === p.user_id));
-    const delay = hasBot ? 3500 : 1500;
+    const delay = hasBot ? randomBetween(2800, 5200) : 1500;
     io.to(roomCode).emit('all_ready', { startsInMs: delay });
     roomState.fastStartTimer = setTimeout(() => startGame(roomCode, io), delay);
     return true;
@@ -330,7 +363,7 @@ function scheduleBotJoins(roomCode, entryFee, io) {
   roomState.botsScheduled = true;
 
   const botCount = randomBotCount();
-  let delay = 3000;
+  let delay = randomBetween(1800, 6500);
 
   for (let i = 0; i < botCount; i++) {
     setTimeout(() => {
@@ -340,7 +373,7 @@ function scheduleBotJoins(roomCode, entryFee, io) {
 
       const realPlayers = getGamePlayers.all(currentGame.id);
       if (realPlayers.length === 0) {
-        closeWaitingRoom(roomCode, currentGame, io, 'No real players');
+        closeWaitingRoom(roomCode, currentGame, io, 'Room closed');
         return;
       }
 
@@ -349,14 +382,26 @@ function scheduleBotJoins(roomCode, entryFee, io) {
 
       const bot = createBotPlayer();
       roomState.botPlayers.push({ ...bot, seat_order: totalCount, status: 'active' });
-      roomState.readyPlayers.add(bot.id);
 
       db.prepare('UPDATE games SET pot = pot + ? WHERE id = ?').run(currentGame.entry_fee, currentGame.id);
       emitPlayers(roomCode, io, currentGame);
-      maybeStartIfAllReady(roomCode, io, currentGame);
+
+      const readyDelay = bot.readyDelayMs || randomBetween(2500, 14000);
+      setTimeout(() => {
+        const freshGame = getGameByRoomCode.get(roomCode);
+        if (!freshGame || freshGame.status !== 'waiting') return;
+        if (roomState.started) return;
+        if (!roomState.botPlayers.some(b => b.id === bot.id && b.status === 'active')) return;
+        if (getGamePlayers.all(freshGame.id).length === 0) {
+          closeWaitingRoom(roomCode, freshGame, io, 'Room closed');
+          return;
+        }
+        roomState.readyPlayers.add(bot.id);
+        maybeStartIfAllReady(roomCode, io, freshGame);
+      }, readyDelay);
     }, delay);
 
-    delay += Math.floor(Math.random() * 2000) + 1000;
+    delay += randomBetween(2400, 9000);
   }
 }
 
@@ -379,7 +424,7 @@ function leaveWaitingRoom(telegramUser, io) {
 
   const remainingRealPlayers = getGamePlayers.all(row.id);
   if (remainingRealPlayers.length === 0) {
-    closeWaitingRoom(row.room_code, freshGame, io, 'No real players');
+    closeWaitingRoom(row.room_code, freshGame, io, 'Room closed');
     return { user: dbUser, roomCode: row.room_code, refunded: row.entry_fee };
   }
 
@@ -458,7 +503,7 @@ function startGame(roomCode, io) {
 
   const realPlayers = getActivePlayers.all(game.id);
   if (realPlayers.length === 0) {
-    closeWaitingRoom(roomCode, game, io, 'No real players');
+    closeWaitingRoom(roomCode, game, io, 'Room closed');
     return;
   }
 
@@ -492,6 +537,8 @@ function startTurnTimer(roomCode, io) {
 
   clearTurnTimer(roomState);
   roomState.turnSecondsLeft = 10;
+  roomState.turnToken = (roomState.turnToken || 0) + 1;
+  const turnToken = roomState.turnToken;
   io.to(roomCode).emit('turn_timer_tick', { secondsLeft: 10 });
 
   roomState.turnTimer = setInterval(() => {
@@ -514,14 +561,20 @@ function startTurnTimer(roomCode, io) {
   if (!game || game.status !== 'active') return;
   const allActive = getActiveSorted(game, roomState);
   const currentPlayer = allActive[roomState.currentPlayerIndex % allActive.length];
-  const isBot = (roomState.botPlayers || []).some(b => b.id === currentPlayer?.user_id);
-  if (isBot) {
-    const delay = Math.floor(Math.random() * 3000) + 1000;
+  const bot = (roomState.botPlayers || []).find(b => b.id === currentPlayer?.user_id && b.status === 'active');
+  if (bot) {
+    const min = bot.turnDelayMinMs || 1200;
+    const max = bot.turnDelayMaxMs || 7000;
+    const delay = Math.min(randomBetween(min, max), 9400);
     setTimeout(() => {
+      if (roomState.turnToken !== turnToken) return;
       if (!roomState.turnTimer) return;
-      clearTurnTimer(roomState);
       const freshGame = getGameByRoomCode.get(roomCode);
       if (!freshGame || freshGame.status !== 'active') return;
+      const freshActive = getActiveSorted(freshGame, roomState);
+      const freshCurrent = freshActive[roomState.currentPlayerIndex % freshActive.length];
+      if (!freshCurrent || freshCurrent.user_id !== currentPlayer.user_id) return;
+      clearTurnTimer(roomState);
       _executeRoll(roomCode, currentPlayer.user_id, currentPlayer.telegram_id, currentPlayer.first_name, freshGame, roomState, io);
     }, delay);
   }
@@ -544,6 +597,7 @@ function rollDiceForPlayer(roomCode, telegramUserId, io) {
   if (!currentPlayer || currentPlayer.user_id !== dbUser.id) throw new Error('NOT_YOUR_TURN');
 
   clearTurnTimer(roomState);
+  roomState.turnToken++;
   return _executeRoll(roomCode, dbUser.id, String(telegramUserId), dbUser.first_name, game, roomState, io);
 }
 
@@ -618,6 +672,8 @@ function endGame(roomCode, winner, game, io) {
       telegramId: winner.telegram_id,
       firstName: winner.first_name,
       username: winner.username || null,
+      avatar: sanitizePlayer(winner).avatar,
+      avatarColor: sanitizePlayer(winner).avatarColor,
     },
     pot,
     prize,
@@ -640,6 +696,7 @@ function handleActiveGameDisconnect(telegramUser, roomCode, io) {
   if (!roomState) return;
 
   clearTurnTimer(roomState);
+  roomState.turnToken++;
   io.to(roomCode).emit('turn_timer_paused', { userId: dbUser.id });
 
   if (roomState.reconnectTimers.has(dbUser.id)) clearTimeout(roomState.reconnectTimers.get(dbUser.id));
