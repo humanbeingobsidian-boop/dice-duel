@@ -1,21 +1,46 @@
 // backend/src/socket/botPlayers.js
 
 const BOT_NAMES = [
-  // International / English-style names
-  'Alex Morgan', 'Maya Cohen', 'Daniel Brooks', 'Emma Levy', 'Ryan Stone',
-  'Sophie Lane', 'Leo Carter', 'Nina Parker', 'Liam Reed', 'Mia Collins',
-  'Noah Bennett', 'Ava Ross', 'Ethan Miller', 'Chloe Adams', 'Ben Taylor',
-  'Ella Green', 'Tom Harris', 'Sarah Blake', 'Nick Cooper', 'Anna White',
+  // English names
+  'Alex Morgan', 'Maya Brooks', 'Daniel Stone', 'Emma Lane', 'Ryan Carter',
+  'Sophie Reed', 'Leo Parker', 'Nina Collins', 'Liam Bennett', 'Mia Ross',
+  'Noah Miller', 'Ava Taylor', 'Ethan Green', 'Chloe Adams', 'Ben Harris',
+  'Ella White', 'Tom Cooper', 'Sarah Blake', 'Nick Mason', 'Anna Grey',
 
-  // Hebrew / Israeli-style names written in English so they feel natural in any app language
-  'Noam Levi', 'Amit Cohen', 'Lior Katz', 'Yael Amir', 'Eden Mizrahi',
-  'Omer Azulay', 'Shira Peretz', 'Itay Bar', 'Dana Mor', 'Niv Shalev',
-  'Roni Gal', 'Tamar Biton', 'Ariel Dahan', 'Adi Stern', 'Yoni Raz',
+  // English nicknames / gamer-style aliases
+  'LuckyFox', 'DiceKing', 'MoonRoller', 'NeonCat', 'TurboTom',
+  'MistyWolf', 'RollMaster', 'BlueTiger', 'PixelAce', 'GoldenPanda',
+  'ShadowDice', 'RocketSam', 'WildCard', 'SilentRoll', 'StormPlayer',
+  'QuickDice', 'FoxyAce', 'NightOwl', 'LuckySeven', 'DiceHunter',
 
-  // Russian / Eastern European names
-  'Dima Volkov', 'Sasha Ivanov', 'Misha Petrov', 'Nikita Orlov', 'Pavel Sokolov',
-  'Olga Smirnova', 'Katya Morozova', 'Anya Fedorova', 'Nadia Romanova', 'Lena Kuznetsova',
-  'Maxim Popov', 'Artem Belov', 'Irina Volkova', 'Vera Petrova', 'Alina Sokolova',
+  // Hebrew names
+  'נועם', 'עמית', 'ליאור', 'יעל', 'עדן',
+  'עומר', 'שירה', 'איתי', 'דנה', 'ניב',
+  'רוני', 'תמר', 'אריאל', 'עדי', 'יונתן',
+  'מאיה', 'אורי', 'גל', 'אביב', 'שחר',
+
+  // Hebrew nicknames
+  'מלך הקוביות', 'נסיך המזל', 'שועל מהיר', 'זורק חזק', 'כוכב הלילה',
+  'מזליקו', 'קוביית זהב', 'טיל סגול', 'פנדה כחולה', 'נמר מזל',
+  'אש על הקוביה', 'חצי מזל', 'הזורק השקט', 'קפטן שש', 'בום קוביה',
+  'אחד שלא נופל', 'רולטה קטנה', 'עין המזל', 'דרקון סגול', 'קוביית פלא',
+
+  // Russian names
+  'Дима', 'Саша', 'Миша', 'Никита', 'Павел',
+  'Ольга', 'Катя', 'Аня', 'Надя', 'Лена',
+  'Максим', 'Артём', 'Ирина', 'Вера', 'Алина',
+  'Кирилл', 'Марина', 'Егор', 'Полина', 'Влад',
+
+  // Russian nicknames
+  'КубикМастер', 'ЛисУдачи', 'НочнойИгрок', 'ТихийБросок', 'ЗолотойКуб',
+  'БыстрыйВолк', 'Панда777', 'КапитанШесть', 'ТурбоКубик', 'ЛунныйКот',
+  'МистерРолл', 'ДикийШанс', 'СинийТигр', 'ОгненныйКуб', 'ФортунаПро',
+  'КубикНиндзя', 'Счастливчик', 'РакетаДима', 'НеонИгрок', 'Шанс777',
+
+  // Mixed international nicknames that work in several languages
+  'Dice Ninja', 'Lucky Panda', 'Star Roller', 'Fox 777', 'Roll Fox',
+  'Mister Six', 'Turbo Dice', 'Gold Roll', 'Moon Dice', 'Ace Roll',
+  'Dragon Dice', 'Panda Roll', 'Neon Roll', 'Magic Dice', 'Lucky Star',
 ];
 
 const AVATARS = ['🦊', '🐼', '🐯', '🐵', '🐨', '🐺', '🦁', '🐸', '🐧', '🐰', '🦄', '🐲', '🦉', '🐙', '🦋', '⭐', '🔥', '⚡', '🌙', '🍀'];
