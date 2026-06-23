@@ -13,6 +13,8 @@ import ReconnectScreen from './screens/ReconnectScreen';
 import PrizesScreen from './screens/PrizesScreen';
 import InviteScreen from './screens/InviteScreen';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+
 const SCREEN = {
   SPLASH: 'splash',
   LOBBY: 'lobby',
@@ -32,21 +34,21 @@ function getJoinErrorText(payload, lang) {
       INSUFFICIENT_BALANCE: `אין מספיק קרדיטים${fee ? ` (צריך ${fee})` : ''}`,
       ALREADY_IN_GAME: 'כבר היית בחדר. ניקינו את החדר, נסה שוב.',
       USER_NOT_FOUND: 'משתמש לא נמצא',
-      NoRealPlayers: 'החדר נסגר כי לא נשארו שחקנים אמיתיים',
+      NoRealPlayers: 'החדר נסגר.',
       default: 'שגיאה בהצטרפות',
     },
     en: {
       INSUFFICIENT_BALANCE: `Not enough credits${fee ? ` (need ${fee})` : ''}`,
       ALREADY_IN_GAME: 'You were already in a room. The room was cleaned up, try again.',
       USER_NOT_FOUND: 'User not found',
-      NoRealPlayers: 'The room closed because no real players remained',
+      NoRealPlayers: 'The room was closed.',
       default: 'Failed to join game',
     },
     ru: {
       INSUFFICIENT_BALANCE: `Недостаточно кредитов${fee ? ` (нужно ${fee})` : ''}`,
       ALREADY_IN_GAME: 'Ты уже был в комнате. Комната очищена, попробуй ещё раз.',
       USER_NOT_FOUND: 'Пользователь не найден',
-      NoRealPlayers: 'Комната закрыта: не осталось реальных игроков',
+      NoRealPlayers: 'Комната закрыта.',
       default: 'Ошибка входа в игру',
     },
   };
@@ -72,6 +74,7 @@ export default function App() {
   const [joinError, setJoinError] = useState(null);
   const [joining, setJoining] = useState(false);
   const [gameResult, setGameResult] = useState(null);
+  const [xpReward, setXpReward] = useState(null);
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(10);
   const [disconnectedPlayer, setDisconnectedPlayer] = useState(null);
   const [myReconnectSeconds, setMyReconnectSeconds] = useState(null);
@@ -88,6 +91,7 @@ export default function App() {
     setRolling(false);
     setRollError(null);
     setGameResult(null);
+    setXpReward(null);
     setCountdown(null);
     setCountdownActive(false);
     setDisconnectedPlayer(null);
@@ -100,6 +104,38 @@ export default function App() {
     setLang(code);
     localStorage.setItem('lang', code);
   }, []);
+
+  const refreshProfileAfterGame = useCallback(async (winner) => {
+    if (!user?.id) return;
+    const beforeXp = Number(user.xp || 0);
+    const beforeLevel = Number(user.level || 1);
+    const fallbackXp = 10 + (winner?.userId === user.id ? 25 : 0);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/profile?lang=${lang}`, {
+        headers: { 'x-telegram-init-data': getInitData() },
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error('profile');
+      const nextUser = data.profile.user;
+      const nextXp = Number(nextUser?.xp || 0);
+      const nextLevel = Number(data.profile.progress?.level || nextUser?.level || beforeLevel);
+      setUser(u => u ? { ...u, ...nextUser } : nextUser);
+      setXpReward({
+        xpEarned: Math.max(0, nextXp - beforeXp) || fallbackXp,
+        levelBefore: beforeLevel,
+        levelAfter: nextLevel,
+        leveledUp: nextLevel > beforeLevel,
+      });
+    } catch {
+      setXpReward({
+        xpEarned: fallbackXp,
+        levelBefore: beforeLevel,
+        levelAfter: beforeLevel,
+        leveledUp: false,
+      });
+    }
+  }, [user, lang]);
 
   useEffect(() => {
     expandApp();
@@ -155,12 +191,12 @@ export default function App() {
     const offReconnectTick = on('reconnect_tick', ({ userId, secondsLeft }) => { setDisconnectedPlayer(d => d?.userId === userId ? { ...d, secondsLeft } : d); setMyReconnectSeconds(prev => prev !== null ? secondsLeft : prev); });
     const offPlayerAbandoned = on('player_abandoned', ({ userId, remainingPlayers }) => { setDisconnectedPlayer(null); setActivePlayers(remainingPlayers); setPlayers(prev => prev.map(p => p.user_id === userId ? { ...p, status: 'eliminated' } : p)); });
     const offPlayerReconnected = on('player_reconnected', ({ userId }) => { setDisconnectedPlayer(d => d?.userId === userId ? null : d); setMyReconnectSeconds(null); });
-    const offGameOver = on('game_over', ({ winner, pot, prize, houseCut }) => { setGameResult({ winner, pot, prize, houseCut }); setTimeout(() => setScreen(SCREEN.RESULT), 300); });
+    const offGameOver = on('game_over', ({ winner, pot, prize, houseCut }) => { setGameResult({ winner, pot, prize, houseCut }); refreshProfileAfterGame(winner); setTimeout(() => setScreen(SCREEN.RESULT), 300); });
     const offGameCancelled = on('game_cancelled', ({ reason }) => { setScreen(SCREEN.LOBBY); setJoinError(getJoinErrorText({ code: reason === 'No real players' ? 'NoRealPlayers' : reason }, lang)); });
     const offSnapshot = on('game_snapshot', ({ game, players, activePlayers, currentPlayer, started, turnSecondsLeft, reconnectSecondsLeft }) => { setGame(game); setPlayers(players); setActivePlayers(activePlayers); setCurrentPlayer(currentPlayer); if (turnSecondsLeft !== undefined) setTurnSecondsLeft(turnSecondsLeft); if (started && game.status === 'active') { setScreen(SCREEN.GAME); if (reconnectSecondsLeft && reconnectSecondsLeft > 0) setMyReconnectSeconds(reconnectSecondsLeft); } else if (game.status === 'waiting') { setScreen(SCREEN.WAITING); } });
     const offBalance = on('balance_updated', ({ balance }) => setUser(u => u ? { ...u, balance } : u));
     return () => { offAuth(); offAuthErr(); offActiveGame(); offNoActiveGame(); offTimerPaused(); offTimerResumed(); offJoined(); offJoinErr(); offPlayerJoined(); offPlayerLeft(); offLeftGame(); offLeftActiveGame(); offLeaveActiveErr(); offCountdownStart(); offCountdownTick(); offCountdownStopped(); offReadyUpdated(); offAllReady(); offGameStarted(); offTurnTick(); offDiceRolled(); offRollErr(); offNextTurn(); offPlayerDisconnected(); offReconnectTick(); offPlayerAbandoned(); offPlayerReconnected(); offGameOver(); offGameCancelled(); offSnapshot(); offBalance(); };
-  }, [on, resetGameState, socket, lang]);
+  }, [on, resetGameState, socket, lang, refreshProfileAfterGame]);
 
   const handleJoinGame = useCallback(() => { setJoining(true); setJoinError(null); emit('join_game', { entryFee: selectedFee }); }, [emit, selectedFee]);
   const handleToggleReady = useCallback(() => emit('toggle_ready'), [emit]);
@@ -183,6 +219,6 @@ export default function App() {
     const ActiveGameScreen = lang === 'en' ? GameScreenEnglish : GameScreen;
     return <>{<ActiveGameScreen lang={lang} game={game} players={players} activePlayers={activePlayers} currentPlayer={currentPlayer} myUserId={user?.id} lastRoll={lastRoll} onRoll={handleRoll} rolling={rolling} rollError={rollError} turnSecondsLeft={turnSecondsLeft} disconnectedPlayer={disconnectedPlayer} onLeaveAfterElimination={handleLeaveActiveGame} />}{myReconnectSeconds !== null && <ReconnectScreen lang={lang} secondsLeft={myReconnectSeconds} onReturn={handleReturnToGame} onGiveUp={handleReconnectExit} />}</>;
   }
-  if (screen === SCREEN.RESULT) return <ResultScreen lang={lang} winner={gameResult?.winner} pot={gameResult?.pot} prize={gameResult?.prize} houseCut={gameResult?.houseCut} myUserId={user?.id} onPlayAgain={handlePlayAgain} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} />;
+  if (screen === SCREEN.RESULT) return <ResultScreen lang={lang} winner={gameResult?.winner} pot={gameResult?.pot} prize={gameResult?.prize} houseCut={gameResult?.houseCut} myUserId={user?.id} xpReward={xpReward} onPlayAgain={handlePlayAgain} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} />;
   return null;
 }
