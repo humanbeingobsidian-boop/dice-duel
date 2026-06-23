@@ -161,7 +161,24 @@ const incrementStats = db.prepare(`
 `);
 
 const getLeaderboard = db.prepare(`
-  SELECT telegram_id, username, first_name, score, total_games, total_wins
+  SELECT
+    telegram_id,
+    username,
+    first_name,
+    COALESCE(nickname, first_name) AS display_name,
+    nickname,
+    selected_avatar AS avatar,
+    selected_avatar,
+    selected_background AS background,
+    selected_background,
+    selected_frame AS frame,
+    selected_frame,
+    selected_title AS title,
+    selected_title,
+    level,
+    score,
+    total_games,
+    total_wins
   FROM users
   ORDER BY score DESC, total_wins DESC
   LIMIT 20
@@ -261,8 +278,9 @@ const recordTurn = db.prepare(`
 `);
 
 const getGameTurns = db.prepare(`
-  SELECT t.*, u.username, u.first_name
-  FROM turns t JOIN users u ON u.id = t.user_id
+  SELECT t.*, u.first_name
+  FROM turns t
+  JOIN users u ON u.id = t.user_id
   WHERE t.game_id = ?
   ORDER BY t.created_at ASC
 `);
@@ -271,28 +289,16 @@ const getGameTurns = db.prepare(`
 const joinGameTransaction = db.transaction((userId, gameId, entryFee, seatOrder) => {
   const deducted = deductBalance.run(entryFee, userId, entryFee);
   if (deducted.changes === 0) throw new Error('INSUFFICIENT_BALANCE');
-  addPot.run(entryFee, gameId);
   addPlayerToGame.run({ game_id: gameId, user_id: userId, seat_order: seatOrder });
-  return true;
+  addPot.run(entryFee, gameId);
+  return getGameById.get(gameId);
 });
 
-// Remove player from waiting room (refund entry fee)
-const removePlayerFromGame = db.prepare(`
-  DELETE FROM game_players WHERE game_id = @game_id AND user_id = @user_id
-`);
-
-const subtractPot = db.prepare(`
-  UPDATE games SET pot = pot - ? WHERE id = ?
-`);
-
 const leaveGameTransaction = db.transaction((userId, gameId, entryFee) => {
-  // Guard: only refund if player is actually still in the game
-  const stillIn = db.prepare(
-    `SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ?`
-  ).get(gameId, userId);
-  if (!stillIn) return false; // already removed, don't double-refund
-  removePlayerFromGame.run({ game_id: gameId, user_id: userId });
-  subtractPot.run(entryFee, gameId);
+  const player = db.prepare(`SELECT id FROM game_players WHERE game_id = ? AND user_id = ?`).get(gameId, userId);
+  if (!player) return false;
+  db.prepare(`DELETE FROM game_players WHERE game_id = ? AND user_id = ?`).run(gameId, userId);
+  db.prepare(`UPDATE games SET pot = MAX(0, pot - ?) WHERE id = ?`).run(entryFee, gameId);
   addBalance.run(entryFee, userId);
   return true;
 });
