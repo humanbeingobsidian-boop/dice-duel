@@ -2,6 +2,7 @@
 const queries = require('./queries');
 const { db, getUserByTelegramId, getUserById } = queries;
 const { calculateLevel, normalizeDailyLogin, XP_REWARDS } = require('../game/levelSystem');
+const { buildAchievements, buildCollection, canUseProfileItem } = require('../game/profileCatalog');
 
 function hasColumn(table, column) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
@@ -49,7 +50,6 @@ const profilePlayerSelect = `
     u.selected_title
 `;
 
-// Now that profile columns exist, replace game-player queries with profile-aware versions.
 queries.getGamePlayers = db.prepare(`
   SELECT ${profilePlayerSelect}
   FROM game_players gp
@@ -66,7 +66,6 @@ queries.getActivePlayers = db.prepare(`
   ORDER BY gp.seat_order ASC
 `);
 
-// XP ledger. This is intentionally separate from balance transactions.
 db.exec(`
   CREATE TABLE IF NOT EXISTS xp_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,20 +178,17 @@ function recordInviteReward(inviterUserId, redeemerUserId) {
   }
 }
 
-function getProfileByTelegramId(telegramId) {
+function getProfileByTelegramId(telegramId, lang = 'en') {
   const user = getUserByTelegramId.get(String(telegramId));
   if (!user) return null;
-  return buildProfile(user);
+  return buildProfile(user, lang);
 }
 
-function buildProfile(user) {
+function buildProfile(user, lang = 'en') {
   const progress = calculateLevel(user.xp || 0);
+  const enrichedUser = { ...user, display_name: user.nickname || user.first_name, level: progress.level };
   return {
-    user: {
-      ...user,
-      display_name: user.nickname || user.first_name,
-      level: progress.level,
-    },
+    user: enrichedUser,
     progress,
     stats: {
       games: user.total_games || 0,
@@ -207,18 +203,31 @@ function buildProfile(user) {
       starsBought: user.stars_bought || 0,
       starsSpent: user.stars_spent || 0,
     },
+    achievements: buildAchievements(enrichedUser, lang),
+    collection: buildCollection(enrichedUser, lang),
   };
 }
 
 function updateProfile(userId, updates = {}) {
+  const current = getUserById.get(userId);
+  if (!current) return null;
+  const progress = calculateLevel(current.xp || 0);
+  const userForUnlocks = { ...current, level: progress.level };
+
   const allowed = {};
   if (typeof updates.nickname === 'string') {
     const nickname = updates.nickname.trim().slice(0, 24);
     allowed.nickname = nickname || null;
   }
-  if (typeof updates.selected_avatar === 'string') allowed.selected_avatar = updates.selected_avatar.slice(0, 16);
-  if (typeof updates.selected_background === 'string') allowed.selected_background = updates.selected_background.slice(0, 64);
-  if (typeof updates.selected_frame === 'string') allowed.selected_frame = updates.selected_frame.slice(0, 64);
+  if (typeof updates.selected_avatar === 'string' && canUseProfileItem(userForUnlocks, 'avatar', updates.selected_avatar)) {
+    allowed.selected_avatar = updates.selected_avatar.slice(0, 16);
+  }
+  if (typeof updates.selected_background === 'string' && canUseProfileItem(userForUnlocks, 'background', updates.selected_background)) {
+    allowed.selected_background = updates.selected_background.slice(0, 64);
+  }
+  if (typeof updates.selected_frame === 'string' && canUseProfileItem(userForUnlocks, 'frame', updates.selected_frame)) {
+    allowed.selected_frame = updates.selected_frame.slice(0, 64);
+  }
   if (typeof updates.selected_title === 'string') allowed.selected_title = updates.selected_title.trim().slice(0, 32) || null;
 
   const keys = Object.keys(allowed);
