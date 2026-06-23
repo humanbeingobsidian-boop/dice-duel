@@ -4,6 +4,7 @@ const {
   upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId,
   getGameByRoomCode, getGamePlayers, updateGameStatus,
 } = require('../db/queries');
+const { awardDailyLogin, recordInviteReward } = require('../db/profile');
 const {
   joinGame, leaveWaitingRoom, leaveActiveGame, toggleReady, rollDiceForPlayer,
   handleActiveGameDisconnect, handleReconnect, getRoomSnapshot,
@@ -46,6 +47,7 @@ module.exports = function setupSocket(io) {
           });
           const referrer = payReferralBonus(dbUser.id, referralCode);
           if (referrer) {
+            recordInviteReward(referrer.id, dbUser.id);
             console.log(`🎁 Referral bonus: +5 credits to ${referrer.first_name} for inviting ${dbUser.first_name}`);
             io.emit(`referral_bonus_${referralCode}`, {
               newUser: dbUser.first_name,
@@ -61,8 +63,10 @@ module.exports = function setupSocket(io) {
           });
         }
 
+        const daily = awardDailyLogin(dbUser.id);
+        dbUser = getUserByTelegramId.get(String(telegramUser.id));
         authenticatedUser = { telegramUser, dbUser };
-        socket.emit('authenticated', { user: dbUser });
+        socket.emit('authenticated', { user: dbUser, daily });
         console.log(`✅ Authenticated: ${dbUser.first_name} (${dbUser.telegram_id})`);
       } catch (err) {
         console.error('Auth error:', err);
