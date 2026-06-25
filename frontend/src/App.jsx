@@ -32,27 +32,9 @@ function getJoinErrorText(payload, lang) {
   const code = typeof payload === 'string' ? payload : (payload?.code || payload?.error);
   const fee = payload?.requiredFee;
   const messages = {
-    he: {
-      INSUFFICIENT_BALANCE: `אין מספיק קרדיטים${fee ? ` (צריך ${fee})` : ''}`,
-      ALREADY_IN_GAME: 'כבר היית בחדר. ניקינו את החדר, נסה שוב.',
-      USER_NOT_FOUND: 'משתמש לא נמצא',
-      NoRealPlayers: 'החדר נסגר.',
-      default: 'שגיאה בהצטרפות',
-    },
-    en: {
-      INSUFFICIENT_BALANCE: `Not enough credits${fee ? ` (need ${fee})` : ''}`,
-      ALREADY_IN_GAME: 'You were already in a room. The room was cleaned up, try again.',
-      USER_NOT_FOUND: 'User not found',
-      NoRealPlayers: 'The room was closed.',
-      default: 'Failed to join game',
-    },
-    ru: {
-      INSUFFICIENT_BALANCE: `Недостаточно кредитов${fee ? ` (нужно ${fee})` : ''}`,
-      ALREADY_IN_GAME: 'Ты уже был в комнате. Комната очищена, попробуй ещё раз.',
-      USER_NOT_FOUND: 'Пользователь не найден',
-      NoRealPlayers: 'Комната закрыта.',
-      default: 'Ошибка входа в игру',
-    },
+    he: { INSUFFICIENT_BALANCE: `אין מספיק קרדיטים${fee ? ` (צריך ${fee})` : ''}`, ALREADY_IN_GAME: 'כבר היית בחדר. ניקינו את החדר, נסה שוב.', USER_NOT_FOUND: 'משתמש לא נמצא', NoRealPlayers: 'החדר נסגר.', default: 'שגיאה בהצטרפות' },
+    en: { INSUFFICIENT_BALANCE: `Not enough credits${fee ? ` (need ${fee})` : ''}`, ALREADY_IN_GAME: 'You were already in a room. The room was cleaned up, try again.', USER_NOT_FOUND: 'User not found', NoRealPlayers: 'The room was closed.', default: 'Failed to join game' },
+    ru: { INSUFFICIENT_BALANCE: `Недостаточно кредитов${fee ? ` (нужно ${fee})` : ''}`, ALREADY_IN_GAME: 'Ты уже был в комнате. Комната очищена, попробуй ещё раз.', USER_NOT_FOUND: 'Пользователь не найден', NoRealPlayers: 'Комната закрыта.', default: 'Ошибка входа в игру' },
   };
   const dict = messages[lang] || messages.en;
   return dict[code] || payload?.message || payload?.error || dict.default;
@@ -84,39 +66,16 @@ export default function App() {
   const [selectedFee, setSelectedFee] = useState(5);
   const [referralBonus, setReferralBonus] = useState(null);
 
-  const resetGameState = useCallback(() => {
-    setGame(null);
-    setPlayers([]);
-    setActivePlayers([]);
-    setCurrentPlayer(null);
-    setLastRoll(null);
-    setRolling(false);
-    setRollError(null);
-    setGameResult(null);
-    setXpReward(null);
-    setCountdown(null);
-    setCountdownActive(false);
-    setDisconnectedPlayer(null);
-    setMyReconnectSeconds(null);
-    setTurnSecondsLeft(10);
-    setReadyPlayers([]);
-  }, []);
-
-  const handleLangChange = useCallback((code) => {
-    setLang(code);
-    localStorage.setItem('lang', code);
-  }, []);
+  const resetGameState = useCallback(() => { setGame(null); setPlayers([]); setActivePlayers([]); setCurrentPlayer(null); setLastRoll(null); setRolling(false); setRollError(null); setGameResult(null); setXpReward(null); setCountdown(null); setCountdownActive(false); setDisconnectedPlayer(null); setMyReconnectSeconds(null); setTurnSecondsLeft(10); setReadyPlayers([]); }, []);
+  const handleLangChange = useCallback((code) => { setLang(code); localStorage.setItem('lang', code); }, []);
 
   const refreshProfileAfterGame = useCallback(async (winner) => {
     if (!user?.id) return;
     const beforeXp = Number(user.xp || 0);
     const beforeLevel = Number(user.level || 1);
     const fallbackXp = 10 + (winner?.userId === user.id ? 25 : 0);
-
     try {
-      const res = await fetch(`${BACKEND_URL}/api/profile?lang=${lang}`, {
-        headers: { 'x-telegram-init-data': getInitData() },
-      });
+      const res = await fetch(`${BACKEND_URL}/api/profile?lang=${lang}`, { headers: { 'x-telegram-init-data': getInitData() } });
       const data = await res.json();
       if (!data.success) throw new Error('profile');
       const nextUser = data.profile.user;
@@ -129,32 +88,11 @@ export default function App() {
     }
   }, [user, lang]);
 
-  useEffect(() => {
-    expandApp();
-    const startParam = getStartAppParam();
-    if (startParam && startParam.length >= 6) setTimeout(() => setScreen(SCREEN.INVITE), 800);
-  }, []);
+  useEffect(() => { expandApp(); const startParam = getStartAppParam(); if (startParam && startParam.length >= 6) setTimeout(() => setScreen(SCREEN.INVITE), 800); }, []);
+  useEffect(() => { if (!connected) return; const initData = getInitData(); const referralCode = getReferralCode(); if (referralCode) console.log('🔗 Referral code detected:', referralCode); emit('authenticate', { initData, referralCode }); setTimeout(() => emit('find_active_game'), 300); }, [connected, emit]);
 
   useEffect(() => {
-    if (!connected) return;
-    const initData = getInitData();
-    const referralCode = getReferralCode();
-    if (referralCode) console.log('🔗 Referral code detected:', referralCode);
-    emit('authenticate', { initData, referralCode });
-    setTimeout(() => emit('find_active_game'), 300);
-  }, [connected, emit]);
-
-  useEffect(() => {
-    const offAuth = on('authenticated', ({ user }) => {
-      setUser(user);
-      if (user?.telegram_id) {
-        socket?.on(`invite_bonus_${user.telegram_id}`, ({ redeemerName, bonus }) => {
-          setUser(u => u ? { ...u, balance: (u.balance ?? 0) + bonus } : u);
-          setReferralBonus({ newUser: redeemerName, bonus });
-          setTimeout(() => setReferralBonus(null), 4000);
-        });
-      }
-    });
+    const offAuth = on('authenticated', ({ user }) => { setUser(user); if (user?.telegram_id) { socket?.on(`invite_bonus_${user.telegram_id}`, ({ redeemerName, bonus }) => { setUser(u => u ? { ...u, balance: (u.balance ?? 0) + bonus } : u); setReferralBonus({ newUser: redeemerName, bonus }); setTimeout(() => setReferralBonus(null), 4000); }); } });
     const offAuthErr = on('auth_error', ({ error }) => console.error('Auth error:', error));
     const offActiveGame = on('active_game_found', ({ snapshot }) => { if (!snapshot) return; setGame(snapshot.game); setPlayers(snapshot.players); setActivePlayers(snapshot.activePlayers); setCurrentPlayer(snapshot.currentPlayer); if (snapshot.turnSecondsLeft !== undefined) setTurnSecondsLeft(snapshot.turnSecondsLeft); if (snapshot.reconnectSecondsLeft > 0) setMyReconnectSeconds(snapshot.reconnectSecondsLeft); setScreen(SCREEN.GAME); });
     const offNoActiveGame = on('no_active_game', () => {});
@@ -203,7 +141,7 @@ export default function App() {
   if (screen === SCREEN.SPLASH) return <>{ReferralToast}<SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} /></>;
   if (screen === SCREEN.INVITE) return <InviteScreen lang={lang} onLangChange={handleLangChange} user={user} onBack={() => setScreen(SCREEN.LOBBY)} onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)} />;
   if (screen === SCREEN.PRIZES) return <PrizesScreen lang={lang} onLangChange={handleLangChange} user={user} onBack={() => setScreen(SCREEN.LOBBY)} onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)} />;
-  if (screen === SCREEN.WHEEL) return <WheelScreen lang={lang} onBack={() => setScreen(SCREEN.LOBBY)} onUserUpdate={handleWheelUserUpdate} />;
+  if (screen === SCREEN.WHEEL) return <WheelScreen lang={lang} onLangChange={handleLangChange} onBack={() => setScreen(SCREEN.LOBBY)} onUserUpdate={handleWheelUserUpdate} />;
   if (screen === SCREEN.LEADERBOARD) return <LeaderboardScreen lang={lang} onLangChange={handleLangChange} onBack={() => setScreen(SCREEN.LOBBY)} myTelegramId={user?.telegram_id} />;
   if (screen === SCREEN.LOBBY) return <LobbyScreen lang={lang} onLangChange={handleLangChange} user={user} onJoin={handleJoinGame} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} onPrizes={() => setScreen(SCREEN.PRIZES)} onInvite={() => setScreen(SCREEN.INVITE)} onWheel={() => setScreen(SCREEN.WHEEL)} onBack={() => setScreen(SCREEN.SPLASH)} loading={joining} error={joinError} selectedFee={selectedFee} onFeeChange={setSelectedFee} />;
   if (screen === SCREEN.WAITING) return <WaitingRoomScreen lang={lang} onLangChange={handleLangChange} game={game} players={players} myUserId={user?.id} countdown={countdown} countdownActive={countdownActive} onLeave={handleLeaveGame} readyPlayers={readyPlayers} onToggleReady={handleToggleReady} />;
