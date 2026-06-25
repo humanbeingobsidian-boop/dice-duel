@@ -13,13 +13,13 @@ const COLLECTIBLE_ITEMS = ['🪣', '🗽', '🍜', '🐶', '🍭', '🎒', '🍰
 
 const LOCAL = {
   he: {
-    confirm: 'אישור רכישה', cancel: '✕ ביטול', buy: '✓ קנה!', credits: 'קרדיטים', stars: 'כוכבים', value: 'שווי', convertible: 'את המתנות ניתן להמיר לכוכבי Telegram דרך Telegram.', collectibleHint: 'מתחלף רנדומלית מתוך מתנות אספנות זמינות', premiumTitle: 'חנות מתנות Telegram', premiumSub: 'קנה מתנות אמיתיות עם קרדיטים והפוך את הניצחונות לפרסים מוחשיים.', convertLine: '💡 את המתנות ניתן להמיר לכוכבים בתוך Telegram.',
+    confirm: 'אישור רכישה', cancel: '✕ ביטול', buy: '✓ קנה!', credits: 'קרדיטים', stars: 'כוכבים', value: 'שווי מתנה', convertible: 'את המתנות ניתן להמיר לכוכבי Telegram דרך Telegram.', collectibleHint: 'מתחלף רנדומלית מתוך מתנות אספנות זמינות', premiumTitle: 'חנות מתנות Telegram', premiumSub: 'קנה מתנות אמיתיות עם קרדיטים והפוך את הניצחונות לפרסים מוחשיים.', convertLine: '💡 את המתנות ניתן להמיר לכוכבים בתוך Telegram.', cost: 'מחיר',
   },
   en: {
-    confirm: 'Confirm Purchase', cancel: '✕ Cancel', buy: '✓ Buy!', credits: 'credits', stars: 'stars', value: 'Value', convertible: 'Gifts can be converted into Telegram Stars through Telegram.', collectibleHint: 'Randomly selected from available collectible gifts', premiumTitle: 'Telegram Gift Shop', premiumSub: 'Buy real Telegram gifts with credits and turn wins into tangible rewards.', convertLine: '💡 Gifts can be converted into Stars inside Telegram.',
+    confirm: 'Confirm Purchase', cancel: '✕ Cancel', buy: '✓ Buy!', credits: 'credits', stars: 'stars', value: 'Gift value', convertible: 'Gifts can be converted into Telegram Stars through Telegram.', collectibleHint: 'Randomly selected from available collectible gifts', premiumTitle: 'Telegram Gift Shop', premiumSub: 'Buy real Telegram gifts with credits and turn wins into tangible rewards.', convertLine: '💡 Gifts can be converted into Stars inside Telegram.', cost: 'Cost',
   },
   ru: {
-    confirm: 'Подтвердить покупку', cancel: '✕ Отмена', buy: '✓ Купить!', credits: 'кредитов', stars: 'звёзд', value: 'Стоимость', convertible: 'Подарки можно конвертировать в Telegram Stars через Telegram.', collectibleHint: 'Случайный выбор из доступных коллекционных подарков', premiumTitle: 'Магазин Telegram Gifts', premiumSub: 'Покупай реальные Telegram подарки за кредиты и превращай победы в призы.', convertLine: '💡 Подарки можно конвертировать в Stars внутри Telegram.',
+    confirm: 'Подтвердить покупку', cancel: '✕ Отмена', buy: '✓ Купить!', credits: 'кредитов', stars: 'звёзд', value: 'Стоимость подарка', convertible: 'Подарки можно конвертировать в Telegram Stars через Telegram.', collectibleHint: 'Случайный выбор из доступных коллекционных подарков', premiumTitle: 'Магазин Telegram Gifts', premiumSub: 'Покупай реальные Telegram подарки за кредиты и превращай победы в призы.', convertLine: '💡 Подарки можно конвертировать в Stars внутри Telegram.', cost: 'Цена',
   },
 };
 
@@ -125,8 +125,8 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}><PrizeVisual prize={confirmPrize} large /></div>
             <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>{l.confirm}</h3>
             <p style={{ color: 'var(--text2)', fontSize: '14px', marginBottom: '6px' }}>{confirmPrize.label}</p>
-            <p style={{ color: 'var(--gold2)', fontWeight: 700, fontSize: '15px', marginBottom: '8px' }}>⭐ {l.value}: {confirmPrize.starsValue?.toLocaleString()} {l.stars}</p>
-            <p style={{ color: 'var(--gold2)', fontWeight: 700, fontSize: '20px', marginBottom: '18px' }}>🪙 {confirmPrize.cost.toLocaleString()} {l.credits}</p>
+            <p style={{ color: 'var(--text2)', fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>{l.value}: {confirmPrize.starsValue?.toLocaleString()} {l.stars}</p>
+            <p style={{ color: 'var(--gold2)', fontWeight: 800, fontSize: '20px', marginBottom: '18px' }}>🪙 {l.cost}: {confirmPrize.cost.toLocaleString()} {l.credits}</p>
             <p style={{ color: 'var(--text3)', fontSize: 12, lineHeight: 1.4, marginBottom: 22 }}>{l.convertible}</p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button className="btn btn-ghost" style={{ flex: 1, fontSize: '15px' }} onClick={() => { haptic('light'); setConfirmPrize(null); }}>{l.cancel}</button>
@@ -189,8 +189,8 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
                     <div style={{ color: 'var(--text2)', fontSize: '12px', marginBottom: '8px', lineHeight: 1.35 }}>{prize.description}</div>
                     {isCollectible && <div style={{ color: 'var(--gold2)', fontSize: '11px', fontWeight: 800, marginBottom: 8 }}>🎲 {l.collectibleHint}</div>}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <div style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.22)', borderRadius: '999px', padding: '5px 10px', color: 'var(--gold2)', fontWeight: 900, fontSize: 12 }}>⭐ {prize.starsValue?.toLocaleString()} {l.stars}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'var(--bg3)', borderRadius: '999px', padding: '5px 10px' }}><span>🪙</span><span style={{ fontWeight: 900, color: 'var(--gold2)', fontSize: '15px' }}>{prize.cost.toLocaleString()}</span></div>
+                      <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '999px', padding: '5px 10px', color: 'var(--text2)', fontWeight: 800, fontSize: 12 }}>{l.value}: {prize.starsValue?.toLocaleString()} {l.stars}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'var(--bg3)', borderRadius: '999px', padding: '5px 10px' }}><span>🪙</span><span style={{ fontWeight: 900, color: 'var(--gold2)', fontSize: '15px' }}>{prize.cost.toLocaleString()} {l.credits}</span></div>
                     </div>
                     <button className={`btn ${canAfford ? 'btn-primary' : 'btn-ghost'}`} style={{ marginTop: 12, padding: '9px 18px', fontSize: '13px', minWidth: 98 }} disabled={!canAfford || isBuying || buying !== null} onClick={() => handleBuy(prize)}>
                       {isBuying ? <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />{t('prizes_buying', lang)}</span> : canAfford ? t('prizes_buy', lang) : t('prizes_cant_afford', lang)}
@@ -206,7 +206,7 @@ export default function PrizesScreen({ lang = 'en', onLangChange, user, onBack, 
       <div className="card" style={{ padding: '14px' }}>
         <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text2)', marginBottom: '8px' }}>{t('prizes_how_title', lang)}</h4>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--text3)' }}>
-          {[t('prizes_step1', lang), t('prizes_step2', lang), t('prizes_step3', lang), l.convertLine].map((step, i) => <div key={i}>{i + 1}️⃣ {step}</div>)}
+          {[t('prizes_step1', lang), t('prizes_step2', lang), t('prizes_step3', lang), l.convertLine].map((step, i) => <div key={i}>{step}</div>)}
         </div>
       </div>
     </div>
