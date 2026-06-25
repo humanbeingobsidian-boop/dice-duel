@@ -2,17 +2,18 @@
 const { db, getUserById, getUserByTelegramId, addBalance } = require('../db/queries');
 const { awardXp } = require('../db/profile');
 
+// Order is visual as well as weighted. Gifts are intentionally scattered around the wheel.
 const WHEEL_SEGMENTS = [
   { id: 'xp_5', type: 'xp', amount: 5, label: '5 XP', emoji: '✨', weight: 32 },
-  { id: 'xp_10', type: 'xp', amount: 10, label: '10 XP', emoji: '⭐', weight: 22 },
-  { id: 'xp_20', type: 'xp', amount: 20, label: '20 XP', emoji: '🌟', weight: 12 },
-  { id: 'credits_5', type: 'credits', amount: 5, label: '5 Credits', emoji: '🪙', weight: 13 },
+  { id: 'gift_teddy', type: 'gift', giftType: 'teddy', label: 'Teddy Gift', emoji: '🧸', weight: 2, dailyLimit: 2, enabled: true },
   { id: 'credits_10', type: 'credits', amount: 10, label: '10 Credits', emoji: '💰', weight: 8 },
+  { id: 'xp_20', type: 'xp', amount: 20, label: '20 XP', emoji: '🌟', weight: 12 },
+  { id: 'gift_diamond', type: 'gift', giftType: 'diamond', label: 'Diamond Gift', emoji: '💎', weight: 0.6, dailyLimit: 0, enabled: false },
+  { id: 'credits_5', type: 'credits', amount: 5, label: '5 Credits', emoji: '🪙', weight: 13 },
+  { id: 'xp_10', type: 'xp', amount: 10, label: '10 XP', emoji: '⭐', weight: 22 },
+  { id: 'gift_flowers', type: 'gift', giftType: 'flowers', label: 'Flowers Gift', emoji: '💐', weight: 1.4, dailyLimit: 0, enabled: false },
   { id: 'credits_20', type: 'credits', amount: 20, label: '20 Credits', emoji: '💎', weight: 5 },
   { id: 'bonus_spin', type: 'bonus_spin', amount: 1, label: 'Bonus Spin', emoji: '🎲', weight: 4 },
-  { id: 'gift_teddy', type: 'gift', giftType: 'teddy', label: 'Teddy Gift', emoji: '🧸', weight: 2, dailyLimit: 2, enabled: true },
-  { id: 'gift_flowers', type: 'gift', giftType: 'flowers', label: 'Flowers Gift', emoji: '🌸', weight: 1.4, dailyLimit: 0, enabled: false },
-  { id: 'gift_diamond', type: 'gift', giftType: 'diamond', label: 'Diamond Gift', emoji: '💎', weight: 0.6, dailyLimit: 0, enabled: false },
 ];
 
 function todayKey() {
@@ -203,15 +204,10 @@ async function notifyGiftWin(giftWin, user, prize) {
   const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
   const username = user.username ? `@${user.username}` : `ID: ${user.telegram_id}`;
   const text =
-    `🎡 *Daily Wheel Gift Win!*
-
-` +
-    `👤 User: ${user.nickname || user.first_name} (${username})
-` +
-    `🎁 Gift: ${prize.emoji} ${prize.label}
-` +
-    `🆔 Gift Win ID: ${giftWin.id}
-` +
+    `🎡 *Daily Wheel Gift Win!*\n\n` +
+    `👤 User: ${user.nickname || user.first_name} (${username})\n` +
+    `🎁 Gift: ${prize.emoji} ${prize.label}\n` +
+    `🆔 Gift Win ID: ${giftWin.id}\n` +
     `📅 Time: ${new Date().toLocaleString('he-IL')}`;
 
   const BOT_TOKEN = process.env.BOT_TOKEN;
