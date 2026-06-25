@@ -13,6 +13,9 @@ const createWheelRouter = require('./routes/wheel');
 const setupSocket = require('./socket/socketHandler');
 const { startBot } = require('./bot');
 const { startWheelNotificationJob } = require('./jobs/wheelNotifications');
+const { installGameFinalizers } = require('./db/gameFinalizers');
+
+installGameFinalizers();
 
 const app = express();
 const server = http.createServer(app);
