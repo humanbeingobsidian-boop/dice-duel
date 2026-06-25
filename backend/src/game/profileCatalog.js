@@ -34,10 +34,16 @@ const ACHIEVEMENTS = [
   { id: 'invite_20', icon: '📣', tier: 'epic', xp: 500, title: { he: 'קהילה קטנה', en: 'Small Community', ru: 'Маленькое сообщество' }, description: { he: 'הזמן 20 חברים', en: 'Invite 20 friends', ru: 'Пригласи 20 друзей' }, check: s => s.friendsInvited >= 20 },
   { id: 'invite_100', icon: '🌍', tier: 'mythic', xp: 2000, title: { he: 'יוצר קהילה', en: 'Community Builder', ru: 'Создатель сообщества' }, description: { he: 'הזמן 100 חברים', en: 'Invite 100 friends', ru: 'Пригласи 100 друзей' }, check: s => s.friendsInvited >= 100 },
 
-  { id: 'login_3', icon: '🔥', tier: 'common', xp: 40, title: { he: 'רצף 3 ימים', en: '3 Day Streak', ru: 'Серия 3 дня' }, description: { he: 'התחבר 3 ימים ברצף', en: 'Log in 3 days in a row', ru: 'Заходи 3 дня подряд' }, check: s => s.bestLoginStreak >= 3 },
-  { id: 'login_7', icon: '⚡', tier: 'rare', xp: 120, title: { he: 'רצף שבועי', en: '7 Day Streak', ru: 'Серия 7 дней' }, description: { he: 'התחבר 7 ימים ברצף', en: 'Log in 7 days in a row', ru: 'Заходи 7 дней подряд' }, check: s => s.bestLoginStreak >= 7 },
-  { id: 'login_30', icon: '📅', tier: 'epic', xp: 500, title: { he: 'חודש רצוף', en: '30 Day Streak', ru: 'Серия 30 дней' }, description: { he: 'התחבר 30 ימים ברצף', en: 'Log in 30 days in a row', ru: 'Заходи 30 дней подряд' }, check: s => s.bestLoginStreak >= 30 },
-  { id: 'login_100', icon: '🗓️', tier: 'legendary', xp: 1500, title: { he: '100 ימים', en: '100 Day Streak', ru: 'Серия 100 дней' }, description: { he: 'התחבר 100 ימים ברצף', en: 'Log in 100 days in a row', ru: 'Заходи 100 дней подряд' }, check: s => s.bestLoginStreak >= 100 },
+  { id: 'wheel_streak_3', icon: '🎡', tier: 'common', xp: 40, title: { he: 'רצף גלגל 3 ימים', en: '3 Day Spin Streak', ru: 'Серия колеса 3 дня' }, description: { he: 'סובב את הגלגל 3 ימים ברצף', en: 'Spin the wheel 3 days in a row', ru: 'Крути колесо 3 дня подряд' }, check: s => s.bestWheelSpinStreak >= 3 },
+  { id: 'wheel_streak_7', icon: '🔥', tier: 'rare', xp: 120, title: { he: 'רצף גלגל שבועי', en: '7 Day Spin Streak', ru: 'Серия колеса 7 дней' }, description: { he: 'סובב את הגלגל 7 ימים ברצף', en: 'Spin the wheel 7 days in a row', ru: 'Крути колесо 7 дней подряд' }, check: s => s.bestWheelSpinStreak >= 7 },
+  { id: 'wheel_streak_14', icon: '⚡', tier: 'rare', xp: 220, title: { he: 'רצף גלגל 14 ימים', en: '14 Day Spin Streak', ru: 'Серия колеса 14 дней' }, description: { he: 'סובב את הגלגל 14 ימים ברצף', en: 'Spin the wheel 14 days in a row', ru: 'Крути колесо 14 дней подряд' }, check: s => s.bestWheelSpinStreak >= 14 },
+  { id: 'wheel_streak_30', icon: '📅', tier: 'epic', xp: 600, title: { he: 'רצף גלגל חודשי', en: '30 Day Spin Streak', ru: 'Серия колеса 30 дней' }, description: { he: 'סובב את הגלגל 30 ימים ברצף', en: 'Spin the wheel 30 days in a row', ru: 'Крути колесо 30 дней подряд' }, check: s => s.bestWheelSpinStreak >= 30 },
+  { id: 'wheel_streak_100', icon: '👑', tier: 'legendary', xp: 1600, title: { he: '100 ימי גלגל', en: '100 Day Spin Streak', ru: 'Серия колеса 100 дней' }, description: { he: 'סובב את הגלגל 100 ימים ברצף', en: 'Spin the wheel 100 days in a row', ru: 'Крути колесо 100 дней подряд' }, check: s => s.bestWheelSpinStreak >= 100 },
+  { id: 'wheel_spins_10', icon: '🔁', tier: 'common', xp: 50, title: { he: '10 סיבובים', en: '10 Spins', ru: '10 спинов' }, description: { he: 'סובב את הגלגל 10 פעמים', en: 'Spin the wheel 10 times', ru: 'Прокрути колесо 10 раз' }, check: s => s.totalWheelSpins >= 10 },
+  { id: 'wheel_spins_50', icon: '🌀', tier: 'rare', xp: 180, title: { he: '50 סיבובים', en: '50 Spins', ru: '50 спинов' }, description: { he: 'סובב את הגלגל 50 פעמים', en: 'Spin the wheel 50 times', ru: 'Прокрути колесо 50 раз' }, check: s => s.totalWheelSpins >= 50 },
+  { id: 'wheel_spins_100', icon: '🎰', tier: 'epic', xp: 450, title: { he: '100 סיבובים', en: '100 Spins', ru: '100 спинов' }, description: { he: 'סובב את הגלגל 100 פעמים', en: 'Spin the wheel 100 times', ru: 'Прокрути колесо 100 раз' }, check: s => s.totalWheelSpins >= 100 },
+  { id: 'wheel_spins_365', icon: '🗓️', tier: 'legendary', xp: 1400, title: { he: '365 סיבובים', en: '365 Spins', ru: '365 спинов' }, description: { he: 'סובב את הגלגל 365 פעמים', en: 'Spin the wheel 365 times', ru: 'Прокрути колесо 365 раз' }, check: s => s.totalWheelSpins >= 365 },
+  { id: 'wheel_spins_1000', icon: '🌈', tier: 'mythic', xp: 3500, title: { he: '1000 סיבובים', en: '1000 Spins', ru: '1000 спинов' }, description: { he: 'סובב את הגלגל 1000 פעמים', en: 'Spin the wheel 1000 times', ru: 'Прокрути колесо 1000 раз' }, check: s => s.totalWheelSpins >= 1000 },
 
   { id: 'stars_50', icon: '⭐', tier: 'rare', xp: 100, title: { he: '50 כוכבים', en: '50 Stars', ru: '50 Stars' }, description: { he: 'קנה 50 כוכבים', en: 'Buy 50 Stars', ru: 'Купи 50 Stars' }, check: s => s.starsBought >= 50 },
   { id: 'stars_500', icon: '💫', tier: 'epic', xp: 500, title: { he: '500 כוכבים', en: '500 Stars', ru: '500 Stars' }, description: { he: 'קנה 500 כוכבים', en: 'Buy 500 Stars', ru: 'Купи 500 Stars' }, check: s => s.starsBought >= 500 },
@@ -54,7 +60,7 @@ const AVATAR_UNLOCKS = [
   { id: 'penguin', type: 'avatar', value: '🐧', rarity: 'common', unlock: { type: 'level', level: 7 } },
   { id: 'fox', type: 'avatar', value: '🦊', rarity: 'rare', unlock: { type: 'level', level: 10 } },
   { id: 'wolf', type: 'avatar', value: '🐺', rarity: 'rare', unlock: { type: 'level', level: 15 } },
-  { id: 'owl', type: 'avatar', value: '🦉', rarity: 'rare', unlock: { type: 'achievement', achievement: 'login_7' } },
+  { id: 'owl', type: 'avatar', value: '🦉', rarity: 'rare', unlock: { type: 'achievement', achievement: 'wheel_streak_7' } },
   { id: 'lion', type: 'avatar', value: '🦁', rarity: 'epic', unlock: { type: 'level', level: 25 } },
   { id: 'tiger', type: 'avatar', value: '🐯', rarity: 'epic', unlock: { type: 'achievement', achievement: 'ten_wins' } },
   { id: 'octopus', type: 'avatar', value: '🐙', rarity: 'epic', unlock: { type: 'achievement', achievement: 'score_500' } },
@@ -96,6 +102,9 @@ function buildStats(user) {
     friendsInvited: user.friends_invited || 0,
     loginStreak: user.login_streak || 0,
     bestLoginStreak: user.best_login_streak || 0,
+    wheelSpinStreak: user.wheel_spin_streak || 0,
+    bestWheelSpinStreak: user.best_wheel_spin_streak || 0,
+    totalWheelSpins: user.total_wheel_spins || 0,
     starsBought: user.stars_bought || 0,
   };
 }
@@ -107,10 +116,7 @@ function getUnlockedAchievementIds(user) {
 
 function buildAchievements(user, lang = 'en') {
   const stats = buildStats(user);
-  return ACHIEVEMENTS.map(a => {
-    const unlocked = a.check(stats);
-    return { id: a.id, icon: a.icon, tier: a.tier, xp: a.xp, unlocked, title: localize(a.title, lang), description: localize(a.description, lang) };
-  });
+  return ACHIEVEMENTS.map(a => ({ id: a.id, icon: a.icon, tier: a.tier, xp: a.xp, unlocked: a.check(stats), title: localize(a.title, lang), description: localize(a.description, lang) }));
 }
 
 function isItemUnlocked(item, user, achievementIds) {
