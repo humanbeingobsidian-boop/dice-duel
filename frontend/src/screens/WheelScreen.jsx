@@ -1,6 +1,7 @@
 // frontend/src/screens/WheelScreen.jsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { haptic, hapticNotification, getInitData } from '../utils/telegram';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -30,7 +31,17 @@ function formatTime(seconds) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-export default function WheelScreen({ lang = 'en', onBack, onUserUpdate }) {
+function shortLabel(seg) {
+  if (seg.type === 'xp') return `${seg.amount} XP`;
+  if (seg.type === 'credits') return `${seg.amount} C`;
+  if (seg.type === 'bonus_spin') return 'Bonus';
+  if (seg.giftType === 'teddy') return 'Teddy';
+  if (seg.giftType === 'flowers') return 'Flowers';
+  if (seg.giftType === 'diamond') return 'Diamond';
+  return seg.label;
+}
+
+export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserUpdate }) {
   const s = TEXT[lang] || TEXT.en;
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -89,10 +100,9 @@ export default function WheelScreen({ lang = 'en', onBack, onUserUpdate }) {
       const prize = data.result.prize;
       const prizeIndex = Math.max(0, segments.findIndex(x => x.id === prize.id));
       const targetCenter = prizeIndex * segmentAngle + segmentAngle / 2;
-      const pointerAngle = 0;
       const extraTurns = 6 + Math.floor(Math.random() * 3);
-      const giftNearMissOffset = 18;
-      const nextRotation = rotation + extraTurns * 360 + (360 - targetCenter + pointerAngle) + giftNearMissOffset;
+      const nearMissOffset = 16;
+      const nextRotation = rotation + extraTurns * 360 + (360 - targetCenter) + nearMissOffset;
 
       setRotation(nextRotation);
       setTimeout(() => {
@@ -100,7 +110,7 @@ export default function WheelScreen({ lang = 'en', onBack, onUserUpdate }) {
         setState(data.result.state);
         setCountdown(data.result.state?.secondsUntilNext || 0);
         onUserUpdate?.({ balance: data.result.balance, xp: data.result.xp, level: data.result.level });
-        hapticNotification(prize.type === 'gift' ? 'success' : 'success');
+        hapticNotification('success');
         setSpinning(false);
       }, 6200);
     } catch {
@@ -124,22 +134,22 @@ export default function WheelScreen({ lang = 'en', onBack, onUserUpdate }) {
 
   return (
     <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'radial-gradient(ellipse at 50% 15%, rgba(245,158,11,0.18), var(--bg) 65%)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px', alignItems: 'center', gap: '8px' }}>
         <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '13px' }} onClick={onBack}>{s.back}</button>
-        <h2 style={{ fontSize: '20px', fontWeight: 900 }}>🎡 {s.title}</h2>
-        <div style={{ width: 64 }} />
+        <h2 style={{ fontSize: '20px', fontWeight: 900, textAlign: 'center' }}>🎡 {s.title}</h2>
+        <LanguageSwitcher lang={lang} onChange={onLangChange} />
       </div>
 
       {loading ? <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text2)' }}>{s.loading}</div> : (
         <>
-          <div style={{ position: 'relative', margin: '12px auto 4px', width: 290, height: 290 }}>
+          <div style={{ position: 'relative', margin: '12px auto 4px', width: 'min(82vw, 310px)', height: 'min(82vw, 310px)', maxWidth: 310, maxHeight: 310 }}>
             <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', zIndex: 3, fontSize: 34, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.5))' }}>🔻</div>
             <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: wheelBackground, border: '8px solid rgba(255,255,255,0.10)', boxShadow: '0 0 38px rgba(245,158,11,0.28), inset 0 0 30px rgba(0,0,0,0.35)', transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 6.2s cubic-bezier(0.08, 0.78, 0.08, 1)' : 'none', position: 'relative', overflow: 'hidden' }}>
               {segments.map((seg, i) => {
                 const angle = i * segmentAngle + segmentAngle / 2;
                 const rare = seg.type === 'gift';
                 return (
-                  <div key={seg.id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `rotate(${angle}deg) translate(0, -104px) rotate(${-angle}deg)`, transformOrigin: '0 0', textAlign: 'center', width: 64, marginLeft: -32, marginTop: -14, color: 'white', textShadow: '0 2px 6px rgba(0,0,0,0.65)', fontWeight: 900, fontSize: rare ? 20 : 12 }}>
+                  <div key={seg.id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `rotate(${angle}deg) translate(0, -112px) rotate(${-angle}deg)`, transformOrigin: '0 0', textAlign: 'center', width: 66, marginLeft: -33, marginTop: -17, color: 'white', textShadow: '0 2px 6px rgba(0,0,0,0.72)', fontWeight: 900, fontSize: rare ? 23 : 12, lineHeight: 1.15 }}>
                     <div>{seg.emoji}</div>
                     {!rare && <div>{seg.amount ? seg.amount : ''}{seg.type === 'xp' ? ' XP' : seg.type === 'credits' ? ' C' : ''}</div>}
                   </div>
@@ -165,9 +175,14 @@ export default function WheelScreen({ lang = 'en', onBack, onUserUpdate }) {
             <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>{s.next}: <span style={{ color: 'var(--gold2)', fontWeight: 900, fontFamily: 'Orbitron, sans-serif' }}>{formatTime(countdown)}</span></div>
           )}
 
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-              {segments.map(seg => <div key={seg.id} style={{ textAlign: 'center', background: seg.type === 'gift' ? 'rgba(245,158,11,0.12)' : 'var(--bg3)', border: `1px solid ${seg.type === 'gift' ? 'rgba(245,158,11,0.32)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', padding: '8px 4px', fontSize: 11 }}><div style={{ fontSize: 18 }}>{seg.emoji}</div><div style={{ color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{seg.label}</div></div>)}
+          <div className="card" style={{ padding: 12, width: '100%', overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8 }}>
+              {segments.map(seg => (
+                <div key={seg.id} style={{ minWidth: 0, height: 70, textAlign: 'center', background: seg.type === 'gift' ? 'rgba(245,158,11,0.12)' : 'var(--bg3)', border: `1px solid ${seg.type === 'gift' ? 'rgba(245,158,11,0.32)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', padding: '7px 3px', fontSize: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                  <div style={{ fontSize: seg.type === 'gift' ? 22 : 19, lineHeight: 1 }}>{seg.emoji}</div>
+                  <div style={{ color: 'var(--text2)', width: '100%', lineHeight: 1.1, whiteSpace: 'normal', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{shortLabel(seg)}</div>
+                </div>
+              ))}
             </div>
           </div>
         </>
