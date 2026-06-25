@@ -1,7 +1,7 @@
 // backend/src/socket/socketHandler.js
 const { validateTelegramData } = require('../middleware/telegramAuth');
 const {
-  upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId,
+  db, upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId,
   getGameByRoomCode, getGamePlayers, updateGameStatus,
 } = require('../db/queries');
 const { awardDailyLogin, recordInviteReward } = require('../db/profile');
@@ -10,7 +10,23 @@ const {
   handleActiveGameDisconnect, handleReconnect, getRoomSnapshot,
 } = require('./roomManager');
 
+function hasColumn(table, column) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
+}
+
+function ensureLanguageColumn() {
+  if (!hasColumn('users', 'ui_lang')) {
+    db.prepare("ALTER TABLE users ADD COLUMN ui_lang TEXT NOT NULL DEFAULT 'he'").run();
+  }
+}
+
+function normalizeLang(lang) {
+  return ['he', 'en', 'ru'].includes(lang) ? lang : null;
+}
+
 module.exports = function setupSocket(io) {
+  ensureLanguageColumn();
+
   io.on('connection', (socket) => {
     console.log(`🔌 Socket connected: ${socket.id}`);
     let authenticatedUser = null;
@@ -24,7 +40,7 @@ module.exports = function setupSocket(io) {
       return false;
     }
 
-    socket.on('authenticate', async ({ initData, referralCode }) => {
+    socket.on('authenticate', async ({ initData, referralCode, lang } = {}) => {
       if (blocked('authenticate', 400)) return;
       try {
         let telegramUser;
@@ -63,11 +79,14 @@ module.exports = function setupSocket(io) {
           });
         }
 
+        const uiLang = normalizeLang(lang) || normalizeLang(telegramUser.language_code) || 'he';
+        db.prepare(`UPDATE users SET ui_lang = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(uiLang, dbUser.id);
+
         const daily = awardDailyLogin(dbUser.id);
         dbUser = getUserByTelegramId.get(String(telegramUser.id));
         authenticatedUser = { telegramUser, dbUser };
         socket.emit('authenticated', { user: dbUser, daily });
-        console.log(`✅ Authenticated: ${dbUser.first_name} (${dbUser.telegram_id})`);
+        console.log(`✅ Authenticated: ${dbUser.first_name} (${dbUser.telegram_id}) lang:${uiLang}`);
       } catch (err) {
         console.error('Auth error:', err);
         socket.emit('auth_error', { error: 'Authentication failed' });
@@ -128,71 +147,36 @@ module.exports = function setupSocket(io) {
       handleReconnect(authenticatedUser.telegramUser, roomCode, io);
       const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
       if (!snapshot) return socket.emit('error', { error: 'Game not found' });
-      socket.join(roomCode);
       socket.roomCode = roomCode;
-      socket.userId = authenticatedUser.dbUser.id;
-      io.to(roomCode).emit('player_reconnected', {
-        userId: authenticatedUser.dbUser.id,
-        firstName: authenticatedUser.dbUser.first_name,
-      });
-      socket.emit('game_snapshot', { ...snapshot });
-      console.log(`🔄 ${authenticatedUser.dbUser.first_name} reconnected to ${roomCode}`);
+      socket.join(roomCode);
+      socket.emit('game_snapshot', snapshot);
     });
 
     socket.on('find_active_game', () => {
-      if (blocked('find_active_game', 900)) return;
+      if (blocked('find_active_game', 1000)) return;
       if (!authenticatedUser) return;
-      const { db } = require('../db/queries');
-      const row = db.prepare(`
-        SELECT g.room_code FROM games g
-        JOIN game_players gp ON gp.game_id = g.id
-        WHERE g.status = 'active' AND gp.user_id = ? AND gp.status = 'active'
-        LIMIT 1
-      `).get(authenticatedUser.dbUser.id);
-
-      if (row) {
-        const roomCode = row.room_code;
+      const rooms = require('./roomManager').getRooms?.() || new Map();
+      for (const [roomCode] of rooms) {
         const snapshot = getRoomSnapshot(roomCode, authenticatedUser.dbUser.id);
-        socket.join(roomCode);
-        socket.roomCode = roomCode;
-        socket.userId = authenticatedUser.dbUser.id;
-        socket.emit('active_game_found', {
-          roomCode,
-          snapshot: snapshot ? { ...snapshot, reconnectSecondsLeft: snapshot.reconnectSecondsLeft || 30 } : snapshot,
-        });
-      } else {
-        socket.emit('no_active_game', {});
+        if (snapshot) {
+          socket.roomCode = roomCode;
+          socket.join(roomCode);
+          return socket.emit('active_game_found', { snapshot });
+        }
       }
+      socket.emit('no_active_game', {});
     });
 
     socket.on('roll_dice', () => {
       if (blocked('roll_dice', 900)) return;
-      if (!authenticatedUser) return socket.emit('error', { error: 'Not authenticated' });
-      if (!socket.roomCode) return socket.emit('error', { error: 'Not in a game room' });
-      try {
-        rollDiceForPlayer(socket.roomCode, authenticatedUser.telegramUser.id, io);
-        const freshUser = getUserByTelegramId.get(String(authenticatedUser.telegramUser.id));
-        socket.emit('balance_updated', { balance: freshUser.balance });
-      } catch (err) {
-        const msgs = {
-          NOT_YOUR_TURN: 'לא התור שלך',
-          GAME_NOT_ACTIVE: 'המשחק לא פעיל',
-          USER_NOT_FOUND: 'משתמש לא נמצא',
-          ROOM_NOT_FOUND: 'חדר לא נמצא',
-          NO_ACTIVE_PLAYERS: 'אין שחקנים פעילים',
-        };
-        socket.emit('roll_error', { error: msgs[err.message] || 'שגיאה בזריקת קובייה' });
-      }
+      if (!authenticatedUser || !socket.roomCode) return;
+      rollDiceForPlayer(authenticatedUser.telegramUser, socket.roomCode, io, socket);
     });
 
     socket.on('disconnect', () => {
-      console.log(`🔌 Disconnected: ${socket.id}`);
-      if (!authenticatedUser) return;
-      if (socket.roomCode) {
-        const leftWaiting = _doLeaveWaiting(socket, authenticatedUser, io);
-        if (!leftWaiting) {
-          handleActiveGameDisconnect(authenticatedUser.telegramUser, socket.roomCode, io);
-        }
+      console.log(`🔌 Socket disconnected: ${socket.id}`);
+      if (authenticatedUser && socket.roomCode) {
+        handleActiveGameDisconnect(authenticatedUser.telegramUser, socket.roomCode, io);
       }
     });
   });
@@ -200,53 +184,30 @@ module.exports = function setupSocket(io) {
 
 function joinGameWithStaleRetry(socket, authenticatedUser, io, fee) {
   try {
-    return _joinAndAttach(socket, authenticatedUser, io, fee);
+    return joinGame(authenticatedUser.telegramUser, io, socket, fee);
   } catch (err) {
     if (err.message !== 'ALREADY_IN_GAME') throw err;
-    _doLeaveWaiting(socket, authenticatedUser, io, { silent: true });
-    return _joinAndAttach(socket, authenticatedUser, io, fee);
+    const staleRows = db.prepare(`
+      SELECT gp.game_id, g.room_code, g.entry_fee
+      FROM game_players gp
+      JOIN games g ON g.id = gp.game_id
+      WHERE gp.user_id = ? AND g.status = 'waiting'
+    `).all(authenticatedUser.dbUser.id);
+    for (const row of staleRows) {
+      try { leaveWaitingRoom(authenticatedUser.telegramUser, row.room_code, io); } catch {}
+    }
+    return joinGame(authenticatedUser.telegramUser, io, socket, fee);
   }
 }
 
-function _joinAndAttach(socket, authenticatedUser, io, fee) {
-  const result = joinGame(authenticatedUser.telegramUser, io, fee);
-  const roomCode = result.game.room_code;
-  socket.join(roomCode);
-  socket.roomCode = roomCode;
-  socket.userId = authenticatedUser.dbUser.id;
-  socket.emit('joined_game', {
-    game: result.game,
-    players: result.players,
-    user: result.user,
-    roomCode,
-    countdownActive: result.countdownActive,
-    countdownSecondsLeft: result.countdownSecondsLeft,
-  });
-  return result;
-}
-
-function closeEmptyWaitingRoom(roomCode) {
-  const game = getGameByRoomCode.get(roomCode);
-  if (!game || game.status !== 'waiting') return;
-  const realPlayers = getGamePlayers.all(game.id);
-  if (realPlayers.length > 0) return;
-  updateGameStatus.run({ status: 'finished', id: game.id });
-}
-
-function _doLeaveWaiting(socket, authenticatedUser, io, options = {}) {
+function _doLeaveWaiting(socket, authenticatedUser, io) {
+  if (!socket.roomCode) return;
   try {
-    const result = leaveWaitingRoom(authenticatedUser.telegramUser, io);
+    const result = leaveWaitingRoom(authenticatedUser.telegramUser, socket.roomCode, io);
     socket.leave(result.roomCode);
     socket.roomCode = null;
-    closeEmptyWaitingRoom(result.roomCode);
-    const freshUser = getUserByTelegramId.get(String(authenticatedUser.telegramUser.id));
-    if (!options.silent) socket.emit('left_game', { balance: freshUser.balance });
-    console.log(`👋 ${authenticatedUser.dbUser.first_name} left waiting room ${result.roomCode}, balance: ${freshUser.balance}`);
-    return true;
+    socket.emit('left_game', { balance: result.balance });
   } catch (err) {
-    if (err.message !== 'NOT_IN_WAITING_ROOM') {
-      console.error('Leave error:', err.message);
-    }
-    return false;
+    socket.emit('error', { error: err.message });
   }
 }
