@@ -17,15 +17,7 @@ import WheelScreen from './screens/WheelScreen';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 const SCREEN = {
-  SPLASH: 'splash',
-  LOBBY: 'lobby',
-  WAITING: 'waiting',
-  GAME: 'game',
-  RESULT: 'result',
-  LEADERBOARD: 'leaderboard',
-  PRIZES: 'prizes',
-  INVITE: 'invite',
-  WHEEL: 'wheel',
+  SPLASH: 'splash', LOBBY: 'lobby', WAITING: 'waiting', GAME: 'game', RESULT: 'result', LEADERBOARD: 'leaderboard', PRIZES: 'prizes', INVITE: 'invite', WHEEL: 'wheel',
 };
 
 function getJoinErrorText(payload, lang) {
@@ -89,7 +81,7 @@ export default function App() {
   }, [user, lang]);
 
   useEffect(() => { expandApp(); const startParam = getStartAppParam(); if (startParam && startParam.length >= 6) setTimeout(() => setScreen(SCREEN.INVITE), 800); }, []);
-  useEffect(() => { if (!connected) return; const initData = getInitData(); const referralCode = getReferralCode(); if (referralCode) console.log('🔗 Referral code detected:', referralCode); emit('authenticate', { initData, referralCode }); setTimeout(() => emit('find_active_game'), 300); }, [connected, emit]);
+  useEffect(() => { if (!connected) return; const initData = getInitData(); const referralCode = getReferralCode(); if (referralCode) console.log('🔗 Referral code detected:', referralCode); emit('authenticate', { initData, referralCode, lang }); setTimeout(() => emit('find_active_game'), 300); }, [connected, emit, lang]);
 
   useEffect(() => {
     const offAuth = on('authenticated', ({ user }) => { setUser(user); if (user?.telegram_id) { socket?.on(`invite_bonus_${user.telegram_id}`, ({ redeemerName, bonus }) => { setUser(u => u ? { ...u, balance: (u.balance ?? 0) + bonus } : u); setReferralBonus({ newUser: redeemerName, bonus }); setTimeout(() => setReferralBonus(null), 4000); }); } });
