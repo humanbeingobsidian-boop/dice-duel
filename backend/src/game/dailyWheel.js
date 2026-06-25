@@ -20,6 +20,12 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function yesterdayKey() {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function nextMidnightIso() {
   const d = new Date();
   d.setUTCHours(24, 0, 0, 0);
@@ -31,7 +37,20 @@ function secondsUntilNextSpin(state) {
   return Math.max(0, Math.ceil((new Date(state.nextSpinAt).getTime() - Date.now()) / 1000));
 }
 
+function hasColumn(table, column) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
+}
+
+function addColumn(table, column, definition) {
+  if (!hasColumn(table, column)) db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+}
+
 function initWheelSchema() {
+  addColumn('users', 'wheel_spin_streak', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('users', 'best_wheel_spin_streak', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('users', 'last_wheel_spin_date', 'TEXT');
+  addColumn('users', 'total_wheel_spins', 'INTEGER NOT NULL DEFAULT 0');
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS daily_wheel_spins (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +90,7 @@ function getWheelState(userId) {
   const bonusAwarded = spins.some(s => s.prize_id === 'bonus_spin');
   const bonusUsed = spins.some(s => s.is_bonus);
   const canSpin = !mainSpin || (bonusAwarded && !bonusUsed);
+  const user = getUserById.get(userId);
   return {
     canSpin,
     canBonusSpin: Boolean(bonusAwarded && !bonusUsed),
@@ -80,6 +100,9 @@ function getWheelState(userId) {
     nextSpinAt: canSpin ? null : nextMidnightIso(),
     secondsUntilNext: 0,
     spinsToday: spins,
+    wheelSpinStreak: user?.wheel_spin_streak || 0,
+    bestWheelSpinStreak: user?.best_wheel_spin_streak || 0,
+    totalWheelSpins: user?.total_wheel_spins || 0,
   };
 }
 
@@ -128,6 +151,30 @@ function pickPrize({ allowBonusSpin }) {
   return weightedPick(WHEEL_SEGMENTS.filter(s => s.type === 'xp' || s.type === 'credits'));
 }
 
+function updateWheelStats(userId, isBonus) {
+  if (isBonus) {
+    db.prepare(`UPDATE users SET total_wheel_spins = total_wheel_spins + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(userId);
+    return;
+  }
+
+  const user = getUserById.get(userId);
+  const today = todayKey();
+  const yesterday = yesterdayKey();
+  let nextStreak = 1;
+  if (user?.last_wheel_spin_date === today) nextStreak = user.wheel_spin_streak || 1;
+  else if (user?.last_wheel_spin_date === yesterday) nextStreak = (user.wheel_spin_streak || 0) + 1;
+
+  db.prepare(`
+    UPDATE users
+    SET wheel_spin_streak = @streak,
+        best_wheel_spin_streak = MAX(best_wheel_spin_streak, @streak),
+        last_wheel_spin_date = @today,
+        total_wheel_spins = total_wheel_spins + 1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = @user_id
+  `).run({ user_id: userId, streak: nextStreak, today });
+}
+
 function normalizeSpinResult(row, prize, state, updatedUser, xpResult = null, giftWin = null) {
   return {
     spin: row,
@@ -172,6 +219,8 @@ function spinWheel(telegramId) {
     amount: prize.amount || 0,
     gift_type: prize.giftType || null,
   });
+
+  updateWheelStats(user.id, isBonus);
 
   let xpResult = null;
   let giftWin = null;
