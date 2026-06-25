@@ -21,33 +21,39 @@ module.exports = function createRouter(io) {
 // ─── Prize catalog (multilingual) ────────────────────────────────────────────
 const PRIZES = [
   {
-    id: 'gift_15stars',
-    emoji: '🎁',
+    id: 'telegram_teddy_15stars',
+    emoji: '🧸',
+    visual: 'teddy',
+    starsValue: 15,
     cost: 30,
     labels: {
-      he: { label: '🎁 Gift — 15 כוכבי Telegram', description: 'תקבל Gift ששווה 15 Telegram Stars דרך הבוט' },
-      en: { label: '🎁 Gift — 15 Telegram Stars',  description: 'Receive a Gift worth 15 Telegram Stars via bot' },
-      ru: { label: '🎁 Gift — 15 звёзд Telegram',  description: 'Получи Gift стоимостью 15 Telegram Stars через бота' },
+      he: { label: '🧸 מתנת דובי Telegram', description: 'תקבל מתנת דובי בשווי 15 Telegram Stars דרך הבוט' },
+      en: { label: '🧸 Telegram Teddy Gift', description: 'Receive a Teddy Gift worth 15 Telegram Stars via bot' },
+      ru: { label: '🧸 Telegram Teddy Gift', description: 'Получи подарок Teddy стоимостью 15 Telegram Stars через бота' },
     },
   },
   {
-    id: 'gift_100stars',
-    emoji: '⭐',
+    id: 'telegram_diamond_100stars',
+    emoji: '💎',
+    visual: 'diamond',
+    starsValue: 100,
     cost: 200,
     labels: {
-      he: { label: '⭐ Gift — 100 כוכבי Telegram', description: 'תקבל Gift ששווה 100 Telegram Stars דרך הבוט' },
-      en: { label: '⭐ Gift — 100 Telegram Stars',  description: 'Receive a Gift worth 100 Telegram Stars via bot' },
-      ru: { label: '⭐ Gift — 100 звёзд Telegram',  description: 'Получи Gift стоимостью 100 Telegram Stars через бота' },
+      he: { label: '💎 מתנת יהלום Telegram', description: 'תקבל מתנת יהלום בשווי 100 Telegram Stars דרך הבוט' },
+      en: { label: '💎 Telegram Diamond Gift', description: 'Receive a Diamond Gift worth 100 Telegram Stars via bot' },
+      ru: { label: '💎 Telegram Diamond Gift', description: 'Получи подарок Diamond стоимостью 100 Telegram Stars через бота' },
     },
   },
   {
-    id: 'gift_1000stars',
-    emoji: '💫',
+    id: 'telegram_collectible_1000stars',
+    emoji: '🎁',
+    visual: 'collectible',
+    starsValue: 1000,
     cost: 2000,
     labels: {
-      he: { label: '💫 Gift — 1000 כוכבי Telegram', description: 'תקבל Gift ששווה 1000 Telegram Stars דרך הבוט' },
-      en: { label: '💫 Gift — 1000 Telegram Stars',  description: 'Receive a Gift worth 1000 Telegram Stars via bot' },
-      ru: { label: '💫 Gift — 1000 звёзд Telegram',  description: 'Получи Gift стоимостью 1000 Telegram Stars через бота' },
+      he: { label: '🎁 מתנת אספנות רנדומלית', description: 'תקבל מתנת Collectible רנדומלית בשווי 1000 Telegram Stars דרך הבוט' },
+      en: { label: '🎁 Random Collectible Gift', description: 'Receive a random Collectible Gift worth 1000 Telegram Stars via bot' },
+      ru: { label: '🎁 Random Collectible Gift', description: 'Получи случайный Collectible подарок стоимостью 1000 Telegram Stars через бота' },
     },
   },
 ];
@@ -58,6 +64,8 @@ function getPrizesForLang(lang = 'en') {
   return PRIZES.map(p => ({
     id: p.id,
     emoji: p.emoji,
+    visual: p.visual,
+    starsValue: p.starsValue,
     cost: p.cost,
     label: p.labels[l].label,
     description: p.labels[l].description,
@@ -237,7 +245,8 @@ async function notifyAdmin(order, dbUser, prize) {
     `🛍️ *הזמנת פרס חדשה!*\n\n` +
     `👤 שחקן: ${dbUser.first_name} (${username})\n` +
     `🎁 פרס: ${prize.labels.he.label}\n` +
-    `💰 עלות: ${prize.cost} מטבעות\n` +
+    `⭐ שווי: ${prize.starsValue} Telegram Stars\n` +
+    `💰 עלות: ${prize.cost} קרדיטים\n` +
     `🆔 Order ID: ${order.id}\n` +
     `📅 זמן: ${new Date().toLocaleString('he-IL')}\n\n` +
     `לאחר שליחת הפרס:\n/sent_${order.id}`;
