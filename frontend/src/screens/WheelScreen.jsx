@@ -33,16 +33,6 @@ function formatTime(seconds) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
-function shortLabel(seg) {
-  if (seg.type === 'xp') return `${seg.amount} XP`;
-  if (seg.type === 'credits') return `${seg.amount} C`;
-  if (seg.type === 'bonus_spin') return 'Bonus';
-  if (seg.giftType === 'teddy') return 'Teddy';
-  if (seg.giftType === 'flowers') return 'Flowers';
-  if (seg.giftType === 'diamond') return 'Diamond';
-  return seg.label;
-}
-
 function Confetti({ show }) {
   if (!show) return null;
   const items = ['✨', '⭐', '💫', '🎉', '🪙', '🎲', '🔥', '💎'];
@@ -243,17 +233,6 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
           {!state?.canSpin && countdown > 0 && (
             <div style={{ textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>{s.next}: <span style={{ color: 'var(--gold2)', fontWeight: 900, fontFamily: 'Orbitron, sans-serif' }}>{formatTime(countdown)}</span></div>
           )}
-
-          <div className="card" style={{ padding: 12, width: '100%', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8 }}>
-              {segments.map(seg => (
-                <div key={seg.id} style={{ minWidth: 0, height: 70, textAlign: 'center', background: seg.type === 'gift' ? 'rgba(245,158,11,0.12)' : 'var(--bg3)', border: `1px solid ${seg.type === 'gift' ? 'rgba(245,158,11,0.32)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', padding: '7px 3px', fontSize: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, boxShadow: seg.type === 'gift' ? 'inset 0 0 14px rgba(251,191,36,0.10)' : undefined }}>
-                  <PrizeIcon seg={seg} />
-                  <div style={{ color: 'var(--text2)', width: '100%', lineHeight: 1.1, whiteSpace: 'normal', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{shortLabel(seg)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
         </>
       )}
     </div>
