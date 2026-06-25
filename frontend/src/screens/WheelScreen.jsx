@@ -7,13 +7,13 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 const TEXT = {
   he: {
-    title: 'גלגל מזל יומי', back: 'חזור', spin: 'סובב!', spinning: 'מסתובב...', next: 'הסיבוב הבא בעוד', bonus: 'קיבלת סיבוב נוסף!', bonusBtn: 'סובב בונוס', won: 'זכית!', xp: 'XP', credits: 'קרדיטים', gift: 'מתנת Telegram', giftNote: 'הזכייה נשלחה לטיפול דרך היוזרבוט', loading: 'טוען גלגל...', unavailable: 'כבר סובבת היום',
+    title: 'גלגל מזל יומי', back: 'חזור', spin: 'סובב!', spinning: 'מסתובב...', next: 'הסיבוב הבא בעוד', bonus: 'קיבלת סיבוב נוסף!', bonusBtn: 'סובב בונוס', won: 'זכית!', xp: 'XP', credits: 'קרדיטים', gift: 'מתנת Telegram', giftNote: 'הזכייה נשלחה לטיפול דרך היוזרבוט', loading: 'טוען גלגל...', streak: 'רצף סיבובים', best: 'שיא רצף', total: 'סה״כ סיבובים', days: 'ימים',
   },
   en: {
-    title: 'Daily Lucky Wheel', back: 'Back', spin: 'Spin!', spinning: 'Spinning...', next: 'Next spin in', bonus: 'You got a bonus spin!', bonusBtn: 'Bonus Spin', won: 'You won!', xp: 'XP', credits: 'credits', gift: 'Telegram Gift', giftNote: 'Your gift win was sent for delivery via userbot', loading: 'Loading wheel...', unavailable: 'You already spun today',
+    title: 'Daily Lucky Wheel', back: 'Back', spin: 'Spin!', spinning: 'Spinning...', next: 'Next spin in', bonus: 'You got a bonus spin!', bonusBtn: 'Bonus Spin', won: 'You won!', xp: 'XP', credits: 'credits', gift: 'Telegram Gift', giftNote: 'Your gift win was sent for delivery via userbot', loading: 'Loading wheel...', streak: 'Spin Streak', best: 'Best Streak', total: 'Total Spins', days: 'days',
   },
   ru: {
-    title: 'Ежедневное колесо', back: 'Назад', spin: 'Крутить!', spinning: 'Крутим...', next: 'Следующий спин через', bonus: 'Ты получил бонусный спин!', bonusBtn: 'Бонусный спин', won: 'Ты выиграл!', xp: 'XP', credits: 'кредитов', gift: 'Telegram Gift', giftNote: 'Подарок отправлен на обработку через userbot', loading: 'Загрузка колеса...', unavailable: 'Ты уже крутил сегодня',
+    title: 'Ежедневное колесо', back: 'Назад', spin: 'Крутить!', spinning: 'Крутим...', next: 'Следующий спин через', bonus: 'Ты получил бонусный спин!', bonusBtn: 'Бонусный спин', won: 'Ты выиграл!', xp: 'XP', credits: 'кредитов', gift: 'Telegram Gift', giftNote: 'Подарок отправлен на обработку через userbot', loading: 'Загрузка колеса...', streak: 'Серия спинов', best: 'Лучшая серия', total: 'Всего спинов', days: 'дней',
   },
 };
 
@@ -41,6 +41,27 @@ function shortLabel(seg) {
   return seg.label;
 }
 
+function Confetti({ show }) {
+  if (!show) return null;
+  const items = ['✨', '⭐', '💫', '🎉', '🪙', '🎲', '🔥', '💎'];
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden', zIndex: 6 }}>
+      {Array.from({ length: 26 }).map((_, i) => (
+        <div key={i} style={{ position: 'absolute', left: `${(i * 37) % 100}%`, top: '-20px', fontSize: 18 + (i % 5), animation: `wheelConfetti ${1.4 + (i % 5) * 0.18}s ease-out forwards`, animationDelay: `${(i % 7) * 0.045}s` }}>{items[i % items.length]}</div>
+      ))}
+    </div>
+  );
+}
+
+function PrizeIcon({ seg, big = false }) {
+  const size = big ? 34 : seg.type === 'gift' ? 22 : 19;
+  return (
+    <span style={{ fontSize: size, lineHeight: 1, display: 'inline-block', filter: seg.type === 'gift' ? 'drop-shadow(0 0 8px rgba(251,191,36,0.55))' : undefined }}>
+      {seg.emoji}
+    </span>
+  );
+}
+
 export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserUpdate }) {
   const s = TEXT[lang] || TEXT.en;
   const [state, setState] = useState(null);
@@ -49,6 +70,7 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState(null);
   const [countdown, setCountdown] = useState(0);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const segments = state?.segments || [];
   const segmentAngle = segments.length ? 360 / segments.length : 36;
@@ -74,6 +96,12 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
     return () => clearInterval(id);
   }, [countdown]);
 
+  useEffect(() => {
+    if (!showConfetti) return;
+    const id = setTimeout(() => setShowConfetti(false), 2200);
+    return () => clearTimeout(id);
+  }, [showConfetti]);
+
   const wheelBackground = useMemo(() => {
     if (!segments.length) return 'var(--surface2)';
     const parts = segments.map((_, i) => {
@@ -88,6 +116,7 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
     if (spinning || !state?.canSpin) return;
     setSpinning(true);
     setResult(null);
+    setShowConfetti(false);
     haptic('heavy');
 
     try {
@@ -100,8 +129,8 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
       const prize = data.result.prize;
       const prizeIndex = Math.max(0, segments.findIndex(x => x.id === prize.id));
       const targetCenter = prizeIndex * segmentAngle + segmentAngle / 2;
-      const extraTurns = 6 + Math.floor(Math.random() * 3);
-      const nearMissOffset = 16;
+      const extraTurns = 7 + Math.floor(Math.random() * 3);
+      const nearMissOffset = prize.type === 'gift' ? 4 : 16;
       const nextRotation = rotation + extraTurns * 360 + (360 - targetCenter) + nearMissOffset;
 
       setRotation(nextRotation);
@@ -110,6 +139,7 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
         setState(data.result.state);
         setCountdown(data.result.state?.secondsUntilNext || 0);
         onUserUpdate?.({ balance: data.result.balance, xp: data.result.xp, level: data.result.level });
+        setShowConfetti(true);
         hapticNotification('success');
         setSpinning(false);
       }, 6200);
@@ -131,9 +161,13 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
 
   const canSpin = state?.canSpin && !spinning;
   const isBonus = state?.canBonusSpin;
+  const resultIsGift = result?.prize?.type === 'gift';
 
   return (
-    <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'radial-gradient(ellipse at 50% 15%, rgba(245,158,11,0.18), var(--bg) 65%)' }}>
+    <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'radial-gradient(ellipse at 50% 15%, rgba(245,158,11,0.18), var(--bg) 65%)', position: 'relative' }}>
+      <style>{`@keyframes wheelConfetti { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(520px) rotate(720deg); opacity: 0; } }`}</style>
+      <Confetti show={showConfetti} />
+
       <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px', alignItems: 'center', gap: '8px' }}>
         <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '13px' }} onClick={onBack}>{s.back}</button>
         <h2 style={{ fontSize: '20px', fontWeight: 900, textAlign: 'center' }}>🎡 {s.title}</h2>
@@ -142,15 +176,21 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
 
       {loading ? <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text2)' }}>{s.loading}</div> : (
         <>
-          <div style={{ position: 'relative', margin: '12px auto 4px', width: 'min(82vw, 310px)', height: 'min(82vw, 310px)', maxWidth: 310, maxHeight: 310 }}>
+          <div className="card" style={{ padding: '10px 12px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
+            <Stat label={s.streak} value={`${state?.wheelSpinStreak || 0} ${s.days}`} />
+            <Stat label={s.best} value={`${state?.bestWheelSpinStreak || 0}`} />
+            <Stat label={s.total} value={`${state?.totalWheelSpins || 0}`} />
+          </div>
+
+          <div style={{ position: 'relative', margin: '8px auto 4px', width: 'min(82vw, 310px)', height: 'min(82vw, 310px)', maxWidth: 310, maxHeight: 310 }}>
             <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', zIndex: 3, fontSize: 34, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.5))' }}>🔻</div>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: wheelBackground, border: '8px solid rgba(255,255,255,0.10)', boxShadow: '0 0 38px rgba(245,158,11,0.28), inset 0 0 30px rgba(0,0,0,0.35)', transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 6.2s cubic-bezier(0.08, 0.78, 0.08, 1)' : 'none', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: wheelBackground, border: resultIsGift ? '8px solid rgba(251,191,36,0.38)' : '8px solid rgba(255,255,255,0.10)', boxShadow: resultIsGift ? '0 0 55px rgba(251,191,36,0.45), inset 0 0 30px rgba(0,0,0,0.35)' : '0 0 38px rgba(245,158,11,0.28), inset 0 0 30px rgba(0,0,0,0.35)', transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 6.2s cubic-bezier(0.08, 0.78, 0.08, 1)' : 'box-shadow 0.3s ease, border 0.3s ease', position: 'relative', overflow: 'hidden' }}>
               {segments.map((seg, i) => {
                 const angle = i * segmentAngle + segmentAngle / 2;
                 const rare = seg.type === 'gift';
                 return (
                   <div key={seg.id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `rotate(${angle}deg) translate(0, -112px) rotate(${-angle}deg)`, transformOrigin: '0 0', textAlign: 'center', width: 66, marginLeft: -33, marginTop: -17, color: 'white', textShadow: '0 2px 6px rgba(0,0,0,0.72)', fontWeight: 900, fontSize: rare ? 23 : 12, lineHeight: 1.15 }}>
-                    <div>{seg.emoji}</div>
+                    <PrizeIcon seg={seg} />
                     {!rare && <div>{seg.amount ? seg.amount : ''}{seg.type === 'xp' ? ' XP' : seg.type === 'credits' ? ' C' : ''}</div>}
                   </div>
                 );
@@ -160,7 +200,8 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
           </div>
 
           {result && (
-            <div className="card" style={{ textAlign: 'center', padding: '18px', border: result.prize.type === 'gift' ? '1px solid rgba(251,191,36,0.55)' : '1px solid var(--border)', animation: 'pop 0.35s ease' }}>
+            <div className="card" style={{ textAlign: 'center', padding: '18px', border: result.prize.type === 'gift' ? '1px solid rgba(251,191,36,0.7)' : '1px solid var(--border)', animation: 'pop 0.35s ease', boxShadow: result.prize.type === 'gift' ? '0 0 28px rgba(251,191,36,0.25)' : undefined }}>
+              <div style={{ fontSize: result.prize.type === 'gift' ? 42 : 28, marginBottom: 4 }}>{result.prize.emoji}</div>
               <div style={{ fontSize: 16, color: 'var(--text2)', marginBottom: 6 }}>{s.won}</div>
               <div style={{ fontSize: 24, fontWeight: 900, color: result.prize.type === 'gift' ? 'var(--gold2)' : 'var(--accent2)' }}>{resultText()}</div>
               {result.prize.type === 'gift' && <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>{s.giftNote}</div>}
@@ -178,8 +219,8 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
           <div className="card" style={{ padding: 12, width: '100%', overflow: 'hidden' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8 }}>
               {segments.map(seg => (
-                <div key={seg.id} style={{ minWidth: 0, height: 70, textAlign: 'center', background: seg.type === 'gift' ? 'rgba(245,158,11,0.12)' : 'var(--bg3)', border: `1px solid ${seg.type === 'gift' ? 'rgba(245,158,11,0.32)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', padding: '7px 3px', fontSize: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                  <div style={{ fontSize: seg.type === 'gift' ? 22 : 19, lineHeight: 1 }}>{seg.emoji}</div>
+                <div key={seg.id} style={{ minWidth: 0, height: 70, textAlign: 'center', background: seg.type === 'gift' ? 'rgba(245,158,11,0.12)' : 'var(--bg3)', border: `1px solid ${seg.type === 'gift' ? 'rgba(245,158,11,0.32)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)', padding: '7px 3px', fontSize: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, boxShadow: seg.type === 'gift' ? 'inset 0 0 14px rgba(251,191,36,0.10)' : undefined }}>
+                  <PrizeIcon seg={seg} />
                   <div style={{ color: 'var(--text2)', width: '100%', lineHeight: 1.1, whiteSpace: 'normal', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{shortLabel(seg)}</div>
                 </div>
               ))}
@@ -189,4 +230,8 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
       )}
     </div>
   );
+}
+
+function Stat({ label, value }) {
+  return <div style={{ background: 'var(--bg3)', borderRadius: 'var(--radius-sm)', padding: '8px 6px' }}><div style={{ color: 'var(--gold2)', fontWeight: 900, fontSize: 14 }}>{value}</div><div style={{ color: 'var(--text3)', fontSize: 10, marginTop: 2 }}>{label}</div></div>;
 }
