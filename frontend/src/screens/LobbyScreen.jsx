@@ -6,7 +6,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher';
 import ProfileScreen from './ProfileScreen';
 
 export default function LobbyScreen({
-  lang = 'en', onLangChange, user, onJoin, onLeaderboard, onPrizes, onInvite, onBack,
+  lang = 'en', onLangChange, user, onJoin, onLeaderboard, onPrizes, onInvite, onWheel, onBack,
   loading, error, selectedFee = 5, onFeeChange,
 }) {
   const [joinLocked, setJoinLocked] = useState(false);
@@ -59,6 +59,10 @@ export default function LobbyScreen({
             {user?.balance !== undefined && <span style={{ fontSize: '12px', color: 'var(--text3)', fontFamily: 'Space Grotesk', marginRight: '4px' }}> {t('lobby_credits', lang)}</span>}
           </div>
         </div>
+      </button>
+
+      <button className="btn btn-primary btn-full" style={{ maxWidth: '360px', width: '100%', padding: '13px 16px', fontSize: '16px', background: 'linear-gradient(135deg, #f59e0b, #a855f7)', boxShadow: '0 0 24px rgba(245,158,11,0.22)' }} onClick={() => { haptic('medium'); onWheel?.(); }}>
+        🎡 {lang === 'he' ? 'גלגל מזל יומי' : lang === 'ru' ? 'Ежедневное колесо' : 'Daily Lucky Wheel'}
       </button>
 
       <div style={{ width: '100%', maxWidth: '360px' }}>
