@@ -4,16 +4,18 @@ import { haptic, hapticNotification, getInitData } from '../utils/telegram';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const USERBOT_USERNAME = 'DiceDuelPrizes';
+const USERBOT_DISPLAY_NAME = 'Dice Duel Prizes';
 
 const TEXT = {
   he: {
-    title: 'גלגל מזל יומי', back: 'חזור', spin: 'סובב!', spinning: 'מסתובב...', next: 'הסיבוב הבא בעוד', bonus: 'קיבלת סיבוב נוסף!', bonusBtn: 'סובב בונוס', won: 'זכית!', xp: 'XP', credits: 'קרדיטים', gift: 'מתנת Telegram', giftNote: 'הזכייה נשלחה לטיפול דרך היוזרבוט', loading: 'טוען גלגל...', streak: 'רצף סיבובים', best: 'שיא רצף', total: 'סה״כ סיבובים', days: 'ימים',
+    title: 'גלגל מזל יומי', back: 'חזור', spin: 'סובב!', spinning: 'מסתובב...', next: 'הסיבוב הבא בעוד', bonus: 'קיבלת סיבוב נוסף!', bonusBtn: 'סובב בונוס', won: 'זכית!', xp: 'XP', credits: 'קרדיטים', gift: 'מתנת Telegram', giftNote: 'הזכייה נשלחה לטיפול דרך היוזרבוט', loading: 'טוען גלגל...', streak: 'רצף סיבובים', best: 'שיא רצף', total: 'סה״כ סיבובים', days: 'ימים', userbotTitle: 'כדי לקבל מתנות מהגלגל', userbotPrefix: 'שלח "hi" לחשבון ', userbotSuffix: ' כדי שנוכל לשלוח לך מתנות אם תזכה.', userbotButton: 'פתח צ׳אט עם',
   },
   en: {
-    title: 'Daily Lucky Wheel', back: 'Back', spin: 'Spin!', spinning: 'Spinning...', next: 'Next spin in', bonus: 'You got a bonus spin!', bonusBtn: 'Bonus Spin', won: 'You won!', xp: 'XP', credits: 'credits', gift: 'Telegram Gift', giftNote: 'Your gift win was sent for delivery via userbot', loading: 'Loading wheel...', streak: 'Spin Streak', best: 'Best Streak', total: 'Total Spins', days: 'days',
+    title: 'Daily Lucky Wheel', back: 'Back', spin: 'Spin!', spinning: 'Spinning...', next: 'Next spin in', bonus: 'You got a bonus spin!', bonusBtn: 'Bonus Spin', won: 'You won!', xp: 'XP', credits: 'credits', gift: 'Telegram Gift', giftNote: 'Your gift win was sent for delivery via userbot', loading: 'Loading wheel...', streak: 'Spin Streak', best: 'Best Streak', total: 'Total Spins', days: 'days', userbotTitle: 'To receive wheel gifts', userbotPrefix: 'Send "hi" to ', userbotSuffix: ' so we can deliver gifts if you win.', userbotButton: 'Open chat with',
   },
   ru: {
-    title: 'Ежедневное колесо', back: 'Назад', spin: 'Крутить!', spinning: 'Крутим...', next: 'Следующий спин через', bonus: 'Ты получил бонусный спин!', bonusBtn: 'Бонусный спин', won: 'Ты выиграл!', xp: 'XP', credits: 'кредитов', gift: 'Telegram Gift', giftNote: 'Подарок отправлен на обработку через userbot', loading: 'Загрузка колеса...', streak: 'Серия спинов', best: 'Лучшая серия', total: 'Всего спинов', days: 'дней',
+    title: 'Ежедневное колесо', back: 'Назад', spin: 'Крутить!', spinning: 'Крутим...', next: 'Следующий спин через', bonus: 'Ты получил бонусный спин!', bonusBtn: 'Бонусный спин', won: 'Ты выиграл!', xp: 'XP', credits: 'кредитов', gift: 'Telegram Gift', giftNote: 'Подарок отправлен на обработку через userbot', loading: 'Загрузка колеса...', streak: 'Серия спинов', best: 'Лучшая серия', total: 'Всего спинов', days: 'дней', userbotTitle: 'Чтобы получить подарки с колеса', userbotPrefix: 'Отправь "hi" аккаунту ', userbotSuffix: ', чтобы мы могли отправить подарок, если ты выиграешь.', userbotButton: 'Открыть чат с',
   },
 };
 
@@ -112,6 +114,14 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
     return `conic-gradient(${parts.join(',')})`;
   }, [segments, segmentAngle]);
 
+  function openUserbotChat() {
+    haptic('medium');
+    const url = `https://t.me/${USERBOT_USERNAME}`;
+    if (window.Telegram?.WebApp?.openTelegramLink) window.Telegram.WebApp.openTelegramLink(url);
+    else if (window.Telegram?.WebApp?.openLink) window.Telegram.WebApp.openLink(url);
+    else window.open(url, '_blank');
+  }
+
   async function spin() {
     if (spinning || !state?.canSpin) return;
     setSpinning(true);
@@ -172,6 +182,19 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
         <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '13px' }} onClick={onBack}>{s.back}</button>
         <h2 style={{ fontSize: '20px', fontWeight: 900, textAlign: 'center' }}>🎡 {s.title}</h2>
         <LanguageSwitcher lang={lang} onChange={onLangChange} />
+      </div>
+
+      <div style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))', border: '1px solid rgba(124,58,237,0.4)', borderRadius: 'var(--radius)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <span style={{ fontSize: '22px', flexShrink: 0 }}>📬</span>
+          <div style={{ fontSize: '13px', color: 'var(--text2)', lineHeight: 1.5 }}>
+            <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '3px' }}>{s.userbotTitle}</strong>
+            <span>{s.userbotPrefix}</span>
+            <button type="button" onClick={openUserbotChat} style={{ display: 'inline', border: 0, padding: 0, margin: 0, background: 'transparent', color: 'var(--accent2)', font: 'inherit', fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}>{USERBOT_DISPLAY_NAME} (@{USERBOT_USERNAME})</button>
+            <span>{s.userbotSuffix}</span>
+          </div>
+        </div>
+        <button className="btn btn-primary btn-full" style={{ fontSize: '13px', padding: '10px' }} onClick={openUserbotChat}>💬 {s.userbotButton} {USERBOT_DISPLAY_NAME}</button>
       </div>
 
       {loading ? <div className="card" style={{ padding: 24, textAlign: 'center', color: 'var(--text2)' }}>{s.loading}</div> : (
