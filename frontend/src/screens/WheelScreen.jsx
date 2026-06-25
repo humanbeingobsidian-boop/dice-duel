@@ -175,7 +175,12 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
 
   return (
     <div className="screen" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'radial-gradient(ellipse at 50% 15%, rgba(245,158,11,0.18), var(--bg) 65%)', position: 'relative' }}>
-      <style>{`@keyframes wheelConfetti { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(520px) rotate(720deg); opacity: 0; } }`}</style>
+      <style>{`
+        @keyframes wheelConfetti { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(520px) rotate(720deg); opacity: 0; } }
+        .daily-wheel-wrap { width: 310px; height: 310px; max-width: calc(100vw - 64px); max-height: calc(100vw - 64px); aspect-ratio: 1 / 1; }
+        .daily-wheel-disc { width: 100%; height: 100%; aspect-ratio: 1 / 1; border-radius: 50%; box-sizing: border-box; }
+        @supports not (aspect-ratio: 1 / 1) { .daily-wheel-wrap::before { content: ''; display: block; padding-top: 100%; } .daily-wheel-wrap { height: auto; } .daily-wheel-disc { position: absolute; inset: 0; } }
+      `}</style>
       <Confetti show={showConfetti} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 70px', alignItems: 'center', gap: '8px' }}>
@@ -205,9 +210,9 @@ export default function WheelScreen({ lang = 'en', onLangChange, onBack, onUserU
             <Stat label={s.total} value={`${state?.totalWheelSpins || 0}`} />
           </div>
 
-          <div style={{ position: 'relative', margin: '8px auto 4px', width: 'min(82vw, 310px)', height: 'min(82vw, 310px)', maxWidth: 310, maxHeight: 310 }}>
+          <div className="daily-wheel-wrap" style={{ position: 'relative', margin: '8px auto 4px', flex: '0 0 auto' }}>
             <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', zIndex: 3, fontSize: 34, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.5))' }}>🔻</div>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: wheelBackground, border: resultIsGift ? '8px solid rgba(251,191,36,0.38)' : '8px solid rgba(255,255,255,0.10)', boxShadow: resultIsGift ? '0 0 55px rgba(251,191,36,0.45), inset 0 0 30px rgba(0,0,0,0.35)' : '0 0 38px rgba(245,158,11,0.28), inset 0 0 30px rgba(0,0,0,0.35)', transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 6.2s cubic-bezier(0.08, 0.78, 0.08, 1)' : 'box-shadow 0.3s ease, border 0.3s ease', position: 'relative', overflow: 'hidden' }}>
+            <div className="daily-wheel-disc" style={{ background: wheelBackground, border: resultIsGift ? '8px solid rgba(251,191,36,0.38)' : '8px solid rgba(255,255,255,0.10)', boxShadow: resultIsGift ? '0 0 55px rgba(251,191,36,0.45), inset 0 0 30px rgba(0,0,0,0.35)' : '0 0 38px rgba(245,158,11,0.28), inset 0 0 30px rgba(0,0,0,0.35)', transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 6.2s cubic-bezier(0.08, 0.78, 0.08, 1)' : 'box-shadow 0.3s ease, border 0.3s ease', position: 'relative', overflow: 'hidden' }}>
               {segments.map((seg, i) => {
                 const angle = i * segmentAngle + segmentAngle / 2;
                 const rare = seg.type === 'gift';
