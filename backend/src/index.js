@@ -12,6 +12,7 @@ const createProfileRouter = require('./routes/profile');
 const createWheelRouter = require('./routes/wheel');
 const setupSocket = require('./socket/socketHandler');
 const { startBot } = require('./bot');
+const { startWheelNotificationJob } = require('./jobs/wheelNotifications');
 
 const app = express();
 const server = http.createServer(app);
@@ -84,4 +85,5 @@ server.listen(PORT, () => {
   console.log(`   Frontend: ${FRONTEND_URL}`);
   startBot();
   startUserbot();
+  startWheelNotificationJob();
 });
