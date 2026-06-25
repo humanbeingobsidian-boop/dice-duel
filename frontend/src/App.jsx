@@ -12,6 +12,7 @@ import LeaderboardScreen from './screens/LeaderboardScreen';
 import ReconnectScreen from './screens/ReconnectScreen';
 import PrizesScreen from './screens/PrizesScreen';
 import InviteScreen from './screens/InviteScreen';
+import WheelScreen from './screens/WheelScreen';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -24,6 +25,7 @@ const SCREEN = {
   LEADERBOARD: 'leaderboard',
   PRIZES: 'prizes',
   INVITE: 'invite',
+  WHEEL: 'wheel',
 };
 
 function getJoinErrorText(payload, lang) {
@@ -121,28 +123,16 @@ export default function App() {
       const nextXp = Number(nextUser?.xp || 0);
       const nextLevel = Number(data.profile.progress?.level || nextUser?.level || beforeLevel);
       setUser(u => u ? { ...u, ...nextUser } : nextUser);
-      setXpReward({
-        xpEarned: Math.max(0, nextXp - beforeXp) || fallbackXp,
-        levelBefore: beforeLevel,
-        levelAfter: nextLevel,
-        leveledUp: nextLevel > beforeLevel,
-      });
+      setXpReward({ xpEarned: Math.max(0, nextXp - beforeXp) || fallbackXp, levelBefore: beforeLevel, levelAfter: nextLevel, leveledUp: nextLevel > beforeLevel });
     } catch {
-      setXpReward({
-        xpEarned: fallbackXp,
-        levelBefore: beforeLevel,
-        levelAfter: beforeLevel,
-        leveledUp: false,
-      });
+      setXpReward({ xpEarned: fallbackXp, levelBefore: beforeLevel, levelAfter: beforeLevel, leveledUp: false });
     }
   }, [user, lang]);
 
   useEffect(() => {
     expandApp();
     const startParam = getStartAppParam();
-    if (startParam && startParam.length >= 6) {
-      setTimeout(() => setScreen(SCREEN.INVITE), 800);
-    }
+    if (startParam && startParam.length >= 6) setTimeout(() => setScreen(SCREEN.INVITE), 800);
   }, []);
 
   useEffect(() => {
@@ -206,19 +196,18 @@ export default function App() {
   const handleReturnToGame = useCallback(() => { if (game?.room_code) emit('reconnect_game', { roomCode: game.room_code }); setMyReconnectSeconds(null); }, [emit, game]);
   const handleReconnectExit = useCallback(() => { setMyReconnectSeconds(null); setScreen(SCREEN.RESULT); setGameResult(prev => prev ?? { winner: null, pot: game?.pot ?? 0, prize: 0, houseCut: 0 }); }, [game]);
   const handlePlayAgain = useCallback(() => { resetGameState(); setScreen(SCREEN.LOBBY); }, [resetGameState]);
+  const handleWheelUserUpdate = useCallback((patch) => setUser(u => u ? { ...u, ...patch } : u), []);
 
   const ReferralToast = referralBonus ? <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.95))', border: '1px solid var(--success2)', borderRadius: 'var(--radius)', padding: '12px 20px', zIndex: 300, whiteSpace: 'nowrap', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', animation: 'pop 0.3s ease' }}><span style={{ fontWeight: 700, fontSize: '14px' }}>🎁 +{referralBonus.bonus} קרדיטים! {referralBonus.newUser} הצטרף דרך הקישור שלך</span></div> : null;
 
   if (screen === SCREEN.SPLASH) return <>{ReferralToast}<SplashScreen lang={lang} onLangChange={handleLangChange} onEnter={() => setScreen(SCREEN.LOBBY)} /></>;
   if (screen === SCREEN.INVITE) return <InviteScreen lang={lang} onLangChange={handleLangChange} user={user} onBack={() => setScreen(SCREEN.LOBBY)} onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)} />;
   if (screen === SCREEN.PRIZES) return <PrizesScreen lang={lang} onLangChange={handleLangChange} user={user} onBack={() => setScreen(SCREEN.LOBBY)} onBalanceUpdate={(balance) => setUser(u => u ? { ...u, balance } : u)} />;
+  if (screen === SCREEN.WHEEL) return <WheelScreen lang={lang} onBack={() => setScreen(SCREEN.LOBBY)} onUserUpdate={handleWheelUserUpdate} />;
   if (screen === SCREEN.LEADERBOARD) return <LeaderboardScreen lang={lang} onLangChange={handleLangChange} onBack={() => setScreen(SCREEN.LOBBY)} myTelegramId={user?.telegram_id} />;
-  if (screen === SCREEN.LOBBY) return <LobbyScreen lang={lang} onLangChange={handleLangChange} user={user} onJoin={handleJoinGame} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} onPrizes={() => setScreen(SCREEN.PRIZES)} onInvite={() => setScreen(SCREEN.INVITE)} onBack={() => setScreen(SCREEN.SPLASH)} loading={joining} error={joinError} selectedFee={selectedFee} onFeeChange={setSelectedFee} />;
+  if (screen === SCREEN.LOBBY) return <LobbyScreen lang={lang} onLangChange={handleLangChange} user={user} onJoin={handleJoinGame} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} onPrizes={() => setScreen(SCREEN.PRIZES)} onInvite={() => setScreen(SCREEN.INVITE)} onWheel={() => setScreen(SCREEN.WHEEL)} onBack={() => setScreen(SCREEN.SPLASH)} loading={joining} error={joinError} selectedFee={selectedFee} onFeeChange={setSelectedFee} />;
   if (screen === SCREEN.WAITING) return <WaitingRoomScreen lang={lang} onLangChange={handleLangChange} game={game} players={players} myUserId={user?.id} countdown={countdown} countdownActive={countdownActive} onLeave={handleLeaveGame} readyPlayers={readyPlayers} onToggleReady={handleToggleReady} />;
-  if (screen === SCREEN.GAME) {
-    const ActiveGameScreen = lang === 'en' ? GameScreenEnglish : GameScreen;
-    return <>{<ActiveGameScreen lang={lang} game={game} players={players} activePlayers={activePlayers} currentPlayer={currentPlayer} myUserId={user?.id} lastRoll={lastRoll} onRoll={handleRoll} rolling={rolling} rollError={rollError} turnSecondsLeft={turnSecondsLeft} disconnectedPlayer={disconnectedPlayer} onLeaveAfterElimination={handleLeaveActiveGame} />}{myReconnectSeconds !== null && <ReconnectScreen lang={lang} secondsLeft={myReconnectSeconds} onReturn={handleReturnToGame} onGiveUp={handleReconnectExit} />}</>;
-  }
+  if (screen === SCREEN.GAME) { const ActiveGameScreen = lang === 'en' ? GameScreenEnglish : GameScreen; return <>{<ActiveGameScreen lang={lang} game={game} players={players} activePlayers={activePlayers} currentPlayer={currentPlayer} myUserId={user?.id} lastRoll={lastRoll} onRoll={handleRoll} rolling={rolling} rollError={rollError} turnSecondsLeft={turnSecondsLeft} disconnectedPlayer={disconnectedPlayer} onLeaveAfterElimination={handleLeaveActiveGame} />}{myReconnectSeconds !== null && <ReconnectScreen lang={lang} secondsLeft={myReconnectSeconds} onReturn={handleReturnToGame} onGiveUp={handleReconnectExit} />}</>; }
   if (screen === SCREEN.RESULT) return <ResultScreen lang={lang} winner={gameResult?.winner} pot={gameResult?.pot} prize={gameResult?.prize} houseCut={gameResult?.houseCut} myUserId={user?.id} xpReward={xpReward} onPlayAgain={handlePlayAgain} onLeaderboard={() => setScreen(SCREEN.LEADERBOARD)} />;
   return null;
 }
