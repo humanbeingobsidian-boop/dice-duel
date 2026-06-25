@@ -30,6 +30,10 @@ addColumn('users', 'best_win_streak', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'friends_invited', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'stars_bought', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'stars_spent', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'wheel_spin_streak', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'best_wheel_spin_streak', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'last_wheel_spin_date', 'TEXT');
+addColumn('users', 'total_wheel_spins', 'INTEGER NOT NULL DEFAULT 0');
 
 const profilePlayerSelect = `
     gp.*,
@@ -197,6 +201,9 @@ function buildProfile(user, lang = 'en') {
       score: user.score || 0,
       loginStreak: user.login_streak || 0,
       bestLoginStreak: user.best_login_streak || 0,
+      wheelSpinStreak: user.wheel_spin_streak || 0,
+      bestWheelSpinStreak: user.best_wheel_spin_streak || 0,
+      totalWheelSpins: user.total_wheel_spins || 0,
       currentWinStreak: user.current_win_streak || 0,
       bestWinStreak: user.best_win_streak || 0,
       friendsInvited: user.friends_invited || 0,
