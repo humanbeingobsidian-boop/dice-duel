@@ -2,7 +2,6 @@
 const { validateTelegramData } = require('../middleware/telegramAuth');
 const {
   db, upsertUser, upsertUserWithReferral, payReferralBonus, getUserByTelegramId,
-  getGameByRoomCode, getGamePlayers, updateGameStatus,
 } = require('../db/queries');
 const { awardDailyLogin, recordInviteReward } = require('../db/profile');
 const {
@@ -99,8 +98,12 @@ module.exports = function setupSocket(io) {
       const fee = [5, 100].includes(Number(entryFee)) ? Number(entryFee) : 100;
       try {
         const result = joinGameWithStaleRetry(socket, authenticatedUser, io, fee);
+        socket.roomCode = result.game.room_code;
+        socket.join(result.game.room_code);
+        socket.emit('joined_game', result);
         console.log(`👤 ${authenticatedUser.dbUser.first_name} joined room ${result.game.room_code} (fee:${fee})`);
       } catch (err) {
+        console.error('Join game error:', err.message, err.stack);
         socket.emit('join_error', { code: err.message, requiredFee: fee });
       }
     });
@@ -184,7 +187,7 @@ module.exports = function setupSocket(io) {
 
 function joinGameWithStaleRetry(socket, authenticatedUser, io, fee) {
   try {
-    return joinGame(authenticatedUser.telegramUser, io, socket, fee);
+    return joinGame(authenticatedUser.telegramUser, io, fee);
   } catch (err) {
     if (err.message !== 'ALREADY_IN_GAME') throw err;
     const staleRows = db.prepare(`
@@ -194,16 +197,16 @@ function joinGameWithStaleRetry(socket, authenticatedUser, io, fee) {
       WHERE gp.user_id = ? AND g.status = 'waiting'
     `).all(authenticatedUser.dbUser.id);
     for (const row of staleRows) {
-      try { leaveWaitingRoom(authenticatedUser.telegramUser, row.room_code, io); } catch {}
+      try { leaveWaitingRoom(authenticatedUser.telegramUser, io); } catch {}
     }
-    return joinGame(authenticatedUser.telegramUser, io, socket, fee);
+    return joinGame(authenticatedUser.telegramUser, io, fee);
   }
 }
 
 function _doLeaveWaiting(socket, authenticatedUser, io) {
   if (!socket.roomCode) return;
   try {
-    const result = leaveWaitingRoom(authenticatedUser.telegramUser, socket.roomCode, io);
+    const result = leaveWaitingRoom(authenticatedUser.telegramUser, io);
     socket.leave(result.roomCode);
     socket.roomCode = null;
     socket.emit('left_game', { balance: result.balance });
