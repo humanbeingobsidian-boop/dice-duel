@@ -31,17 +31,28 @@ export default function LobbyScreen({
   }
 
   return (
-    <div className="screen" style={{
+    <div className="screen lobby-screen" style={{
       background: 'radial-gradient(ellipse at 50% 20%, #1a0a3a 0%, var(--bg) 60%)',
-      padding: '24px', gap: '16px',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '24px',
+      paddingTop: 'max(24px, env(safe-area-inset-top))',
+      paddingBottom: 'calc(96px + env(safe-area-inset-bottom))',
+      gap: '16px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      minHeight: '100dvh',
+      height: 'auto',
+      overflowY: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      boxSizing: 'border-box',
     }}>
       <div style={{ width: '100%', maxWidth: '360px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <button className="btn btn-ghost" style={{ padding: '8px 14px', fontSize: '13px' }} onClick={() => { haptic('light'); onBack(); }}>{t('lobby_back', lang)}</button>
         <LanguageSwitcher lang={lang} onChange={onLangChange} />
       </div>
 
-      <button type="button" onClick={() => { if (user) { haptic('light'); setShowProfile(true); } }} style={{ width: '100%', maxWidth: '360px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'inherit', font: 'inherit', color: 'inherit', cursor: user ? 'pointer' : 'default' }}>
+      <button type="button" onClick={() => { if (user) { haptic('light'); setShowProfile(true); } }} style={{ width: '100%', maxWidth: '360px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'inherit', font: 'inherit', color: 'inherit', cursor: user ? 'pointer' : 'default', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: displayUser?.selected_frame === 'gold' ? 'linear-gradient(135deg, var(--gold), var(--gold2))' : displayUser?.selected_frame === 'neon' ? 'linear-gradient(135deg, #06b6d4, #a855f7)' : displayUser?.selected_frame === 'purple' ? 'linear-gradient(135deg, var(--accent), var(--accent2))' : 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', boxShadow: '0 5px 14px rgba(0,0,0,0.25)' }}>
             {displayUser?.selected_avatar || '🐢'}
@@ -61,11 +72,11 @@ export default function LobbyScreen({
         </div>
       </button>
 
-      <button className="btn btn-primary btn-full" style={{ maxWidth: '360px', width: '100%', padding: '13px 16px', fontSize: '16px', background: 'linear-gradient(135deg, #f59e0b, #a855f7)', boxShadow: '0 0 24px rgba(245,158,11,0.22)' }} onClick={() => { haptic('medium'); onWheel?.(); }}>
+      <button className="btn btn-primary btn-full" style={{ maxWidth: '360px', width: '100%', padding: '13px 16px', fontSize: '16px', background: 'linear-gradient(135deg, #f59e0b, #a855f7)', boxShadow: '0 0 24px rgba(245,158,11,0.22)', flexShrink: 0 }} onClick={() => { haptic('medium'); onWheel?.(); }}>
         🎡 {lang === 'he' ? 'גלגל מזל יומי' : lang === 'ru' ? 'Ежедневное колесо' : 'Daily Lucky Wheel'}
       </button>
 
-      <div style={{ width: '100%', maxWidth: '360px' }}>
+      <div style={{ width: '100%', maxWidth: '360px', flexShrink: 0 }}>
         <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '10px', fontWeight: 600 }}>{t('lobby_choose_table', lang)}</div>
         <div style={{ display: 'flex', gap: '10px' }}>
           {tables.map(table => {
@@ -82,7 +93,7 @@ export default function LobbyScreen({
         </div>
       </div>
 
-      <div className="card" style={{ width: '100%', maxWidth: '360px', padding: '20px' }}>
+      <div className="card" style={{ width: '100%', maxWidth: '360px', padding: '20px', flexShrink: 0 }}>
         {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', color: 'var(--danger2)', fontSize: '14px', marginBottom: '14px' }}>❌ {error}</div>}
         {!user ? (
           <div style={{ padding: '12px', color: 'var(--text3)', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><span style={{ width: '16px', height: '16px', border: '2px solid var(--border)', borderTopColor: 'var(--accent2)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />{t('lobby_loading', lang)}</div>
@@ -95,7 +106,7 @@ export default function LobbyScreen({
       </div>
 
       {user && (
-        <div style={{ display: 'flex', gap: '8px', width: '100%', maxWidth: '360px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', width: '100%', maxWidth: '360px', flexWrap: 'wrap', flexShrink: 0 }}>
           {[
             { label: t('lobby_games', lang), value: user.total_games ?? 0 },
             { label: t('lobby_wins', lang), value: user.total_wins ?? 0 },
@@ -110,11 +121,11 @@ export default function LobbyScreen({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '10px', width: '100%', maxWidth: '360px' }}>
+      <div style={{ display: 'flex', gap: '10px', width: '100%', maxWidth: '360px', flexShrink: 0 }}>
         <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { haptic('light'); onLeaderboard(); }}>{t('lobby_leaderboard', lang)}</button>
         <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { haptic('light'); onPrizes(); }}>{t('lobby_prizes', lang)}</button>
       </div>
-      <button className="btn btn-ghost btn-full" style={{ maxWidth: '360px', width: '100%', color: 'var(--success2)', border: '1px solid rgba(16,185,129,0.3)' }} onClick={() => { haptic('light'); onInvite(); }}>
+      <button className="btn btn-ghost btn-full" style={{ maxWidth: '360px', width: '100%', color: 'var(--success2)', border: '1px solid rgba(16,185,129,0.3)', flexShrink: 0 }} onClick={() => { haptic('light'); onInvite(); }}>
         👥 {lang === 'he' ? 'הזמן חבר • +5 קרדיטים' : lang === 'ru' ? 'Пригласить друга • +5 кредитов' : 'Invite Friend • +5 Credits'}
       </button>
     </div>
