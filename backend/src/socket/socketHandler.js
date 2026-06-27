@@ -173,7 +173,12 @@ module.exports = function setupSocket(io) {
     socket.on('roll_dice', () => {
       if (blocked('roll_dice', 900)) return;
       if (!authenticatedUser || !socket.roomCode) return;
-      rollDiceForPlayer(authenticatedUser.telegramUser, socket.roomCode, io, socket);
+      try {
+        rollDiceForPlayer(socket.roomCode, authenticatedUser.telegramUser.id, io);
+      } catch (err) {
+        console.error('Roll dice error:', err.message, err.stack);
+        socket.emit('roll_error', { error: err.message });
+      }
     });
 
     socket.on('disconnect', () => {
